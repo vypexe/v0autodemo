@@ -5,6 +5,8 @@ from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 
+from fastapi.concurrency import run_in_threadpool
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -20,16 +22,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Redis connection
-redis = Redis(
-    url=os.getenv("REDIS_URL", "[https://inviting-trout-14302.upstash.io](https://inviting-trout-14302.upstash.io)"),
-    token=os.getenv("REDIS_TOKEN", "ATfeAAIjcDFlNWNhZTQ0ZDU0ZmQ0ZWVkYWRiNzEwODhmMzQ4MTc1N3AxMA")
-)
+# Load from env
+REDIS_URL = os.getenv("REDIS_URL")
+REDIS_TOKEN = os.getenv("REDIS_TOKEN")
+
+# Validate
+if not REDIS_URL.startswith("http"):
+    raise ValueError("REDIS_URL must start with http:// or https://")
+
+redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
 
 # Define routes
 @app.get("/")
 def read_root():
     return {"message": "Redis API is running"}
+
+@app.get("/interview/latest")
+async def get_latest_interview():
+    """Get the most recent interview"""
+    interview_keys = await run_in_threadpool(redis.keys, "interview:*")
+
+    if not interview_keys:
+        raise HTTPException(status_code=404, detail="No interviews found")
+
+    # Parse keys into (key, timestamp)
+    valid_keys = []
+    for key in interview_keys:
+        key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+        try:
+            prefix, ts = key_str.split(":")
+            timestamp = int(ts)
+            valid_keys.append((key_str, timestamp))
+        except Exception:
+            continue  # skip malformed keys
+
+    if not valid_keys:
+        raise HTTPException(status_code=404, detail="No valid interviews found")
+
+    # Sort by timestamp descending
+    valid_keys.sort(key=lambda x: x[1], reverse=True)
+    latest_key = valid_keys[0][0]
+
+    # Retrieve interview data
+    latest_interview = await run_in_threadpool(redis.hgetall, latest_key)
+
+    if isinstance(latest_interview, dict) and "id" not in latest_interview:
+        latest_interview["id"] = latest_key
+
+    return latest_interview
+
 
 @app.get("/interview/{interview_id}")
 async def get_interview(interview_id: str):
