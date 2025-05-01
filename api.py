@@ -4,7 +4,7 @@ from upstash_redis import Redis
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
-
+from openai import OpenAI
 from fastapi.concurrency import run_in_threadpool
 
 # Load environment variables from .env file
@@ -23,8 +23,10 @@ app.add_middleware(
 )
 
 # Load from env
+client = OpenAI()
 REDIS_URL = os.getenv("REDIS_URL")
 REDIS_TOKEN = os.getenv("REDIS_TOKEN")
+
 
 # Validate
 if not REDIS_URL.startswith("http"):
@@ -37,6 +39,7 @@ redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
 def read_root():
     return {"message": "Redis API is running"}
 
+# Get the latest interview from redis (Upstash)
 @app.get("/interview/latest")
 async def get_latest_interview():
     """Get the most recent interview"""
@@ -72,6 +75,43 @@ async def get_latest_interview():
     return latest_interview
 
 
+@app.get("/interview/latest/openai")
+async def get_latest_interview_openai():
+    """Get the latest interview and parse it through OpenAI to get an optimized styling prompt"""
+    # Get the latest interview data
+    latest_interview = await get_latest_interview()
+    
+    # Prepare the base prompt
+    base_prompt = "Create a unique and specific prompt focusing on styling: design, font style, color scheme, animations, and blend of style/tone. It should be unique to the given info below, aligning with the goal of the user: "
+    
+    # Format the interview data into a string for the prompt
+    interview_info = "\n".join([f"{k}: {v}" for k, v in latest_interview.items()])
+    
+    # Combine the base prompt with the interview info
+    full_prompt = f"{base_prompt}\n\n{interview_info}"
+    
+    try:
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-4o", 
+            messages=[
+                {"role": "system", "content": "You are a web design expert who specializes in creating unique and specific styling prompts."},
+                {"role": "user", "content": full_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        # Extract and return the styled prompt
+        styled_prompt = response.choices[0].message.content
+        
+        return {
+            "original_interview": latest_interview,
+            "styled_prompt": styled_prompt
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating styled prompt: {str(e)}")
+
 @app.get("/interview/{interview_id}")
 async def get_interview(interview_id: str):
     """Get interview data by ID"""
@@ -96,5 +136,6 @@ async def get_all_interviews():
         result.append(interview_data)
     
     return result
+
 
 # Run with: uvicorn api:app --reload
