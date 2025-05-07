@@ -1,0 +1,50 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Live v0.dev Progress Viewer</title>
+        <meta http-equiv="refresh" content="2">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+                text-align: center;
+                background-color: #f4f4f4;
+            }
+            h1 {
+                color: #333;
+            }
+            .container {
+                max-width: 1100px;
+                margin: 0 auto;
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            }
+            .screenshot {
+                max-width: 100%;
+                margin-top: 20px;
+                border: 1px solid #ddd;
+            }
+            .timestamp {
+                color: #666;
+                font-size: 14px;
+                margin-top: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Automation Progress</h1>
+            <p>Live view - auto-refreshes every 2 seconds</p>
+            <div class="timestamp">Last updated: <span id="timestamp"></span></div>
+            <img class="screenshot" src="latest.png" alt="Latest screenshot">
+            <script>
+                document.getElementById('timestamp').innerText = new Date().toLocaleString();
+            </script>
+        </div>
+    </body>
+    </html>
+    
