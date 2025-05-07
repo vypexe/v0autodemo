@@ -1,0 +1,58 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>V0.dev Generation Live Viewer</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+</head>
+<body>
+  <h1>V0.dev Generation Live Viewer</h1>
+  
+  <div class="screenshot-container">
+    <img id="live" src="/screen" alt="Screenshot of the current state">
+    <div class="status">Auto-refreshing every second</div>
+    <div class="refresh-time" id="last-refresh">Last updated: Just now</div>
+  </div>
+  
+  <script>
+    // Get elements
+    const liveImg = document.getElementById('live');
+    const lastRefresh = document.getElementById('last-refresh');
+    
+    // Format time function
+    function formatTime(date) {
+      return date.toLocaleTimeString();
+    }
+    
+    // Update the timestamp
+    function updateTimestamp() {
+      lastRefresh.textContent = `Last updated: ${formatTime(new Date())}`;
+    }
+    
+    // Update the image with a cache-busting query parameter
+    function updateImage() {
+      liveImg.src = `/screen?t=${Date.now()}`;
+      updateTimestamp();
+    }
+    
+    // Initial update
+    updateTimestamp();
+    
+    // Set up regular updates
+    setInterval(updateImage, 1000);
+    
+    // Also update when the image loads successfully
+    liveImg.addEventListener('load', function() {
+      // Image loaded successfully
+      document.title = `V0.dev Live View - ${formatTime(new Date())}`;
+    });
+    
+    // Handle error if image can't be loaded
+    liveImg.addEventListener('error', function() {
+      lastRefresh.textContent = `Last update failed at ${formatTime(new Date())}`;
+    });
+  </script>
+</body>
+</html>
