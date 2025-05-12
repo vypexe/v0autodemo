@@ -664,25 +664,16 @@ async def debug_info():
             import openai
             openai.api_key = openai_api_key
             
-            # Try both API versions
             try:
-                # Try newer client first
+                # Only use the new client API format
                 client = openai.OpenAI(api_key=openai_api_key)
                 models = client.models.list()
                 debug_data["openai"]["connection"] = "successful"
                 debug_data["openai"]["api_version"] = "newer OpenAI client"
                 debug_data["openai"]["models_count"] = len(list(models.data)) if hasattr(models, 'data') else "unknown"
             except Exception as e:
-                # Try legacy version
-                try:
-                    model_list = openai.Model.list()
-                    debug_data["openai"]["connection"] = "successful"
-                    debug_data["openai"]["api_version"] = "legacy OpenAI client"
-                    debug_data["openai"]["models_count"] = len(model_list.data) if hasattr(model_list, 'data') else "unknown"
-                except Exception as alt_e:
-                    debug_data["openai"]["connection"] = "failed"
-                    debug_data["openai"]["error"] = str(e)
-                    debug_data["openai"]["legacy_error"] = str(alt_e)
+                debug_data["openai"]["connection"] = "failed"
+                debug_data["openai"]["error"] = str(e)
         except ImportError:
             debug_data["openai"]["error"] = "OpenAI library not installed"
     
