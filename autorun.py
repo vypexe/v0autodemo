@@ -316,7 +316,7 @@ def run():
                 results_dir
             )
             
-                # Instead of pressing Enter, find and click the specific submit button
+            # Instead of pressing Enter, find and click the specific submit button
             print("Looking for submit button...")
 
             # Try to find the button with the exact data-testid
