@@ -305,8 +305,49 @@ def run():
             print("Looking for input field...")
             input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
             input_field.wait_for(state="visible")
+
+            # Fill input first using standard API
             print("Filling with prompt...")
             input_field.fill(prompt)
+
+            # Then trigger validation events using JavaScript
+            print("Triggering validation events...")
+            validation_result = page.evaluate("""
+                (promptText) => {
+                    // Find the textarea
+                    const textarea = document.querySelector('textarea[placeholder="Ask v0 to build…"]');
+                    if (textarea) {
+                        // Fill with value
+                        textarea.value = promptText;
+                        
+                        // Manually dispatch events to trigger validation
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                        textarea.dispatchEvent(new Event('blur', { bubbles: true }));
+                        
+                        // Force element focus and validation
+                        textarea.focus();
+                        
+                        // Check if button is enabled after events
+                        const button = document.querySelector('button[data-testid="prompt-form-send-button"]');
+                        if (button) {
+                            return {
+                                success: true,
+                                buttonEnabled: !button.disabled && button.getAttribute('aria-disabled') !== 'true',
+                                value: textarea.value.substring(0, 30) + '...'
+                            };
+                        }
+                        return {
+                            success: true,
+                            buttonEnabled: "button not found",
+                            value: textarea.value.substring(0, 30) + '...'
+                        };
+                    }
+                    return { success: false, error: "Textarea not found" };
+                }
+            """, prompt)
+
+            print(f"Validation result: {validation_result}")
             
             # Take screenshot after filling prompt
             take_screenshot(
