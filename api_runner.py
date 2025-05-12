@@ -263,11 +263,19 @@ async def get_latest():
 @app.get("/viewer")
 async def get_live_viewer():
     try:
-        with open("results/live-viewer.html", "r") as f:
+        # Check if the viewer file exists
+        viewer_path = "results/live-viewer.html"
+        if not os.path.exists(viewer_path):
+            # Return a meaningful error if the file doesn't exist
+            return {"error": f"Live viewer file not found at {viewer_path}. Make sure an automation has been run."}
+        
+        with open(viewer_path, "r") as f:
             html_content = f.read()
         
         # Add timestamp parameter to force browser to reload image
         timestamp = str(int(time.time()))
+        
+        # Make sure to use the absolute URL with the correct endpoint
         updated_html = html_content.replace('src="latest.png"', f'src="/latest_image?t={timestamp}"')
         
         # Add cache prevention headers
@@ -279,7 +287,10 @@ async def get_live_viewer():
         
         return Response(content=updated_html, media_type="text/html", headers=headers)
     except Exception as e:
-        return {"error": str(e)}
+        # Return a more detailed error response
+        import traceback
+        error_details = traceback.format_exc()
+        return {"error": str(e), "details": error_details}
 
 # Also update the image endpoint
 @app.get("/latest_image")
@@ -296,14 +307,30 @@ async def get_latest_image():
         }
         
         if os.path.exists(latest_image):
-            return FileResponse(latest_image, headers=headers)
+            return FileResponse(latest_image, media_type="image/png", headers=headers)
         else:
             default_image = os.path.join(results_dir, "placeholder.png")
             if os.path.exists(default_image):
-                return FileResponse(default_image, headers=headers)
-            return {"error": "No screenshot available yet"}
+                return FileResponse(default_image, media_type="image/png", headers=headers)
+            
+            # If no placeholder image exists, create a directory if it doesn't exist
+            # and return a more informative error
+            if not os.path.exists(results_dir):
+                os.makedirs(results_dir, exist_ok=True)
+            
+            # Return a JSON response since we don't have an image to return
+            return Response(
+                content=json.dumps({"error": "No screenshot or placeholder image available"}),
+                media_type="application/json",
+                headers=headers
+            )
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        error_details = traceback.format_exc()
+        return Response(
+            content=json.dumps({"error": str(e), "details": error_details}),
+            media_type="application/json"
+        )
 
 @app.get("/latest_deployment")
 async def get_latest_deployment():
@@ -318,31 +345,6 @@ async def get_latest_deployment():
             return {"content": content}
         else:
             return {"error": f"File not found: {latest_file}"}
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/latest_image")
-async def get_latest_image():
-    """Serve the latest screenshot"""
-    try:
-        results_dir = os.environ.get("RESULTS_DIR", "results")
-        latest_image = os.path.join(results_dir, "latest.png")
-        
-        # Define cache prevention headers
-        cache_headers = {
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0"
-        }
-        
-        if os.path.exists(latest_image):
-            return FileResponse(latest_image, headers=cache_headers)
-        else:
-            # Return a placeholder or default image
-            default_image = os.path.join(results_dir, "placeholder.png")
-            if os.path.exists(default_image):
-                return FileResponse(default_image, headers=cache_headers)
-            return {"error": "No screenshot available yet"}
     except Exception as e:
         return {"error": str(e)}
 
