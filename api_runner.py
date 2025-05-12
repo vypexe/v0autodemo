@@ -661,22 +661,35 @@ async def debug_info():
     # Test OpenAI connectivity (if key is available)
     if openai_api_key:
         try:
-            import openai
-            openai.api_key = openai_api_key
+            # Import correctly - this is critical!
+            from openai import OpenAI
             
             try:
-                # Only use the new client API format
-                client = openai.OpenAI(api_key=openai_api_key)
-                models = client.models.list()
+                # Initialize client correctly
+                client = OpenAI(api_key=openai_api_key)
+                
+                # Make a simple test API call
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                           {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Hello!"}
+                    ],
+                    max_tokens=10
+                )
+                
                 debug_data["openai"]["connection"] = "successful"
                 debug_data["openai"]["api_version"] = "newer OpenAI client"
-                debug_data["openai"]["models_count"] = len(list(models.data)) if hasattr(models, 'data') else "unknown"
+                debug_data["openai"]["response"] = response.choices[0].message.content
             except Exception as e:
                 debug_data["openai"]["connection"] = "failed"
                 debug_data["openai"]["error"] = str(e)
-        except ImportError:
-            debug_data["openai"]["error"] = "OpenAI library not installed"
-    
+                
+                # Get more detailed error information
+                import traceback
+                debug_data["openai"]["error_details"] = traceback.format_exc()
+        except ImportError as ie:
+                debug_data["openai"]["error"] = f"OpenAI library not installed correctly: {str(ie)}"
     # Test format_prompt function
     try:
         from autorun import get_data_from_api, format_prompt
