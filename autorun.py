@@ -108,6 +108,7 @@ def get_data_from_api():
         print(f"Error fetching data from API: {e}")
         return None
 
+# In autorun.py - Update the format_prompt function
 def format_prompt(api_data):
     """Format the prompt for OpenAI from API data"""
     if not api_data:
@@ -129,11 +130,12 @@ def format_prompt(api_data):
         # Use OpenAI to create a styled, specific prompt
         try:
             import openai
+            # Only use the new client API format
             client = openai.OpenAI(api_key=openai_api_key)
             
             # Send the upstash data to OpenAI for processing
             response = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a web design expert specializing in creating detailed design prompts."},
                     {"role": "user", "content": f"Create a paragraph style prompt using this data:\n\n{upstash_data}\n\nAlign it with the project goal. Focus on specific aspects of unique style, specific font types, and design/structure as well as any unique animations that would enhance the user experience."}
@@ -149,27 +151,14 @@ def format_prompt(api_data):
             return styled_prompt.strip()
             
         except Exception as e:
-            print(f"ERROR using OpenAI API: {str(e)}")
-            return f"Error using OpenAI API: {str(e)}"
+            error_msg = f"Error using OpenAI API: {str(e)}"
+            print(error_msg)
+            return error_msg
     
     except Exception as e:
-        print(f"Error formatting prompt: {str(e)}")
-        return f"Error formatting prompt: {str(e)}"
-
-def clear_directory(directory):
-    """Clear all files in a directory without removing the directory itself"""
-    if os.path.exists(directory):
-        for filename in os.listdir(directory):
-            file_path = os.path.join(directory, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f'Failed to delete {file_path}. Reason: {e}')
-    else:
-        os.makedirs(directory, exist_ok=True)
+        error_msg = f"Error formatting prompt: {str(e)}"
+        print(error_msg)
+        return error_msg
 
 def create_live_viewer(results_dir):
     """Create a simple HTML page that auto-refreshes to show the latest screenshot"""
