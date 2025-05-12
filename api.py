@@ -16,7 +16,7 @@ app = FastAPI(title="AgenticFruit API", description="API for automating first de
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production - need to update this with frontend code.
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
