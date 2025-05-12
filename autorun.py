@@ -5,6 +5,7 @@ import os
 import json
 import shutil
 import subprocess
+from upstash_redis import Redis
 
 # Check for command-line overrides via environment variables
 HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
@@ -31,11 +32,65 @@ def ensure_playwright_browsers_installed():
 
 def get_data_from_api():
     try:
-        response = requests.get("http://localhost:8000/interview/latest/openai")
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f" Error fetching data from API: {e}")
+        # First try the local API
+        try:
+            response = requests.get("http://localhost:8000/interview/latest/openai", timeout=3)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Local API unavailable: {e}")
+            
+        # If local API fails, try Upstash Redis
+        print("Falling back to Upstash Redis...")
+        
+        # Get Upstash credentials from environment
+        redis_url = os.environ.get("REDIS_URL")
+        redis_token = os.environ.get("REDIS_TOKEN")
+        
+        if not redis_url or not redis_token:
+            print("Upstash credentials not found in environment variables")
+            return None
+            
+        # Connect using Upstash REST client
+        redis = Redis(url=redis_url, token=redis_token)
+        
+        # Find all keys matching interview:* pattern
+        try:
+            # Use keys command to get all interview keys (be careful with this in production with many keys)
+            interview_keys = redis.keys("interview:*")
+            
+            if not interview_keys:
+                print("No interview data found in Redis")
+                return None
+                
+            # Sort keys to find the most recent one (highest timestamp)
+            # interview keys are in format interview:TIMESTAMP
+            latest_key = sorted(interview_keys, key=lambda k: int(k.split(':')[1]), reverse=True)[0]
+            print(f"Found latest interview key: {latest_key}")
+            
+            # Get the interview data
+            interview_data = redis.hgetall(latest_key)
+            
+            if interview_data:
+                print(f"Successfully retrieved interview data from key: {latest_key}")
+                
+                # Convert the interview structure to the format expected by format_prompt
+                formatted_data = {
+                    "original_interview": interview_data,
+                    "styled_prompt": ""  # Add default styled_prompt if needed
+                }
+                
+                return formatted_data
+            else:
+                print(f"No data found for key: {latest_key}")
+                return None
+                
+        except Exception as e:
+            print(f"Error retrieving interview data: {e}")
+            return None
+                
+    except Exception as e:
+        print(f"Error fetching data from API: {e}")
         return None
 
 def format_prompt(api_data):
