@@ -259,7 +259,6 @@ async def get_latest():
     else:
         return {"message": "No deployment available yet"}
 
-# In api_runner.py - Update the viewer endpoint
 @app.get("/viewer")
 async def get_live_viewer():
     try:
@@ -292,7 +291,6 @@ async def get_live_viewer():
         error_details = traceback.format_exc()
         return {"error": str(e), "details": error_details}
 
-# Also update the image endpoint
 @app.get("/latest_image")
 async def get_latest_image():
     try:
@@ -427,6 +425,7 @@ async def debug_info():
     import os
     import sys
     import requests
+    import traceback
     
     debug_data = {
         "system_info": {
@@ -447,7 +446,15 @@ async def debug_info():
         },
         "env_vars": {
             "key_env_vars_present": [k for k in os.environ.keys() 
-                                   if k in ["REDIS_URL", "REDIS_TOKEN", "HEADLESS", "PROMPT_OVERRIDE", "SKIP_SCREENSHOTS", "RESULTS_DIR"]]
+                                   if k in ["REDIS_URL", "REDIS_TOKEN", "HEADLESS", "PROMPT_OVERRIDE", "SKIP_SCREENSHOTS", "RESULTS_DIR", "OPENAI_API_KEY"]]
+        },
+        "viewer_info": {
+            "live_viewer_exists": os.path.exists("results/live-viewer.html"),
+            "live_viewer_size": os.path.getsize("results/live-viewer.html") if os.path.exists("results/live-viewer.html") else 0,
+            "latest_png_exists": os.path.exists("results/latest.png"),
+            "latest_png_size": os.path.getsize("results/latest.png") if os.path.exists("results/latest.png") else 0,
+            "latest_png_timestamp": os.path.getmtime("results/latest.png") if os.path.exists("results/latest.png") else None,
+            "results_dir_contents": os.listdir("results") if os.path.exists("results") else []
         }
     }
     
@@ -510,18 +517,224 @@ async def debug_info():
         "results_dir_exists": os.path.exists("results"),
     }
     
+    # Check OpenAI API key
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    debug_data["openai_config"] = {
+        "api_key_configured": bool(openai_api_key),
+        "api_key_length": len(openai_api_key) if openai_api_key else 0,
+        "api_key_prefix": openai_api_key[:4] + "..." if openai_api_key and len(openai_api_key) > 4 else None
+    }
+    
+    # Test OpenAI connectivity (if key is available)
+    if openai_api_key:
+        try:
+            import openai
+            openai.api_key = openai_api_key
+            # Try to list models - this will validate the API key
+            try:
+                model_list = openai.Model.list()
+                debug_data["openai_test"] = {
+                    "connection": "successful",
+                    "models_available": len(model_list.data) > 0 if hasattr(model_list, 'data') else False
+                }
+            except Exception as e:
+                debug_data["openai_test"] = {"connection_error": str(e)}
+                
+                # Try an alternative API endpoint if the main one failed
+                try:
+                    # Check if it's the newer API version
+                    client = openai.OpenAI(api_key=openai_api_key)
+                    models = client.models.list()
+                    debug_data["openai_test"]["alternative_api"] = "working"
+                    debug_data["openai_test"]["api_version"] = "newer OpenAI client"
+                except Exception as alt_e:
+                    debug_data["openai_test"]["alternative_api_error"] = str(alt_e)
+        except ImportError:
+            debug_data["openai_test"] = {"error": "OpenAI library not installed"}
+    else:
+        debug_data["openai_test"] = {"error": "OpenAI API key not configured"}
+    
     # Try to get the Upstash data using the same path as in get_data_from_api
     try:
-        from autorun import get_data_from_api
+        from autorun import get_data_from_api, format_prompt
         api_data = get_data_from_api()
         debug_data["autorun_api_test"] = {
             "get_data_from_api_result": "successful" if api_data else "failed",
             "data_keys": list(api_data.keys()) if api_data else None
         }
+        
+        # Test the format_prompt function
+        if api_data:
+            try:
+                formatted_prompt = format_prompt(api_data)
+                debug_data["prompt_formatting"] = {
+                    "success": True,
+                    "prompt_length": len(formatted_prompt),
+                    "prompt_preview": formatted_prompt[:100] + "..." if len(formatted_prompt) > 100 else formatted_prompt,
+                    "contains_styled_prompt": "styled_prompt" in api_data and bool(api_data["styled_prompt"]),
+                    "original_interview_exists": "original_interview" in api_data and bool(api_data["original_interview"])
+                }
+                
+                # More detailed inspection of the original_interview data
+                if "original_interview" in api_data and api_data["original_interview"]:
+                    original_interview = api_data["original_interview"]
+                    debug_data["original_interview_data"] = {
+                        "has_name": "name" in original_interview and bool(original_interview["name"]),
+                        "has_initial_request": "initial_request" in original_interview and bool(original_interview["initial_request"]),
+                        "has_product_info": "product_info" in original_interview and bool(original_interview["product_info"]),
+                        "has_website_examples": "website_examples" in original_interview and bool(original_interview["website_examples"])
+                    }
+            except Exception as e:
+                debug_data["prompt_formatting"] = {
+                    "success": False,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }
     except Exception as e:
-        debug_data["autorun_api_test"] = {"error": str(e)}
+        debug_data["autorun_api_test"] = {"error": str(e), "traceback": traceback.format_exc()}
     
     return debug_data
+
+@app.get("/latest_image")
+async def get_latest_image():
+    try:
+        results_dir = os.environ.get("RESULTS_DIR", "results")
+        latest_image = os.path.join(results_dir, "latest.png")
+        
+        # Add cache prevention headers - strengthen these to force browser refresh
+        headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Image-Time": str(int(time.time()))  # Add timestamp to response headers
+        }
+        
+        # Add debug info to log
+        if os.path.exists(latest_image):
+            image_age = time.time() - os.path.getmtime(latest_image)
+            print(f"Serving image {latest_image}, age: {image_age:.2f} seconds")
+            
+            # Check if image is recent (less than 5 minutes old)
+            if image_age > 300:  # 5 minutes
+                print(f"WARNING: Image is older than 5 minutes ({image_age:.2f} seconds)")
+            
+            return FileResponse(latest_image, media_type="image/png", headers=headers)
+        else:
+            print(f"Image not found: {latest_image}")
+            
+            # Check results directory contents for debugging
+            if os.path.exists(results_dir):
+                files = os.listdir(results_dir)
+                png_files = [f for f in files if f.endswith('.png')]
+                print(f"Available PNG files in {results_dir}: {png_files}")
+                
+                # If there are any PNG files, serve the most recent one
+                if png_files:
+                    png_files.sort(key=lambda f: os.path.getmtime(os.path.join(results_dir, f)), reverse=True)
+                    most_recent = os.path.join(results_dir, png_files[0])
+                    print(f"Serving most recent PNG: {most_recent}")
+                    return FileResponse(most_recent, media_type="image/png", headers=headers)
+            else:
+                print(f"Results directory not found: {results_dir}")
+                os.makedirs(results_dir, exist_ok=True)
+            
+            # If we reach here, return a JSON response with error details
+            return Response(
+                content=json.dumps({
+                    "error": "No screenshots available",
+                    "results_dir": results_dir,
+                    "exists": os.path.exists(results_dir),
+                    "process_status": latest_status
+                }),
+                media_type="application/json",
+                headers=headers
+            )
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error serving latest image: {str(e)}\n{error_details}")
+        return Response(
+            content=json.dumps({"error": str(e), "details": error_details}),
+            media_type="application/json"
+        )
+
+@app.get("/monitor")
+async def monitor_status():
+    """Provide detailed status about the current automation run"""
+    import psutil
+    
+    try:
+        # Get current time for age calculations
+        current_time = time.time()
+        
+        # Status information
+        status_info = {
+            "current_status": latest_status,
+            "active_processes": list(running_processes.keys()),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        
+        # Screenshot information
+        results_dir = os.environ.get("RESULTS_DIR", "results")
+        latest_image = os.path.join(results_dir, "latest.png")
+        
+        status_info["screenshot"] = {
+            "exists": os.path.exists(latest_image),
+            "age_seconds": current_time - os.path.getmtime(latest_image) if os.path.exists(latest_image) else None,
+            "size_bytes": os.path.getsize(latest_image) if os.path.exists(latest_image) else 0,
+        }
+        
+        # Process information
+        process_info = []
+        for pid in running_processes.keys():
+            try:
+                if psutil.pid_exists(pid):
+                    proc = psutil.Process(pid)
+                    process_info.append({
+                        "pid": pid,
+                        "status": proc.status(),
+                        "cpu_percent": proc.cpu_percent(interval=0.1),
+                        "memory_percent": proc.memory_percent(),
+                        "create_time": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(proc.create_time())),
+                        "running_time_seconds": current_time - proc.create_time(),
+                    })
+                else:
+                    process_info.append({
+                        "pid": pid,
+                        "status": "not_exists",
+                    })
+            except Exception as e:
+                process_info.append({
+                    "pid": pid,
+                    "status": "error",
+                    "error": str(e)
+                })
+        
+        status_info["processes"] = process_info
+        
+        # Recent activity
+        if os.path.exists(results_dir):
+            files = os.listdir(results_dir)
+            png_files = [f for f in files if f.endswith('.png')]
+            
+            recent_files = []
+            for png_file in sorted(png_files, key=lambda f: os.path.getmtime(os.path.join(results_dir, f)), reverse=True)[:5]:
+                file_path = os.path.join(results_dir, png_file)
+                recent_files.append({
+                    "name": png_file,
+                    "modified": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(file_path))),
+                    "age_seconds": current_time - os.path.getmtime(file_path),
+                    "size_bytes": os.path.getsize(file_path),
+                })
+            
+            status_info["recent_files"] = recent_files
+        
+        return status_info
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        return {"error": str(e), "details": error_details}
 
 # Added a simple welcome endpoint for testing
 @app.get("/")
