@@ -5,7 +5,7 @@ import os
 import json
 import shutil
 import subprocess
-from upstash_redis import Redis
+import sys
 
 # Check for command-line overrides via environment variables
 HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
@@ -51,12 +51,41 @@ def get_data_from_api():
             print("Upstash credentials not found in environment variables")
             return None
             
-        # Connect using Upstash REST client
-        redis = Redis(url=redis_url, token=redis_token)
-        
-        # Find all keys matching interview:* pattern
+        # Make sure upstash_redis is installed
         try:
-            # Use keys command to get all interview keys (be careful with this in production with many keys)
+            from upstash_redis import Redis
+        except ImportError:
+            print("upstash_redis library not installed. Installing...")
+            try:
+                # Try to install upstash_redis if it's missing
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "upstash_redis"])
+                from upstash_redis import Redis
+                print("Successfully installed upstash_redis")
+            except Exception as install_err:
+                print(f"Failed to install upstash_redis: {install_err}")
+                return None
+        
+        # Fix URL format if needed (convert https:// to redis://)
+        if redis_url.startswith("https://"):
+            print("Converting HTTPS URL to Redis URL format")
+            # Extract credentials and hostname from https URL
+            if "@" in redis_url:
+                # Format with credentials
+                url_parts = redis_url.replace("https://", "").split("@")
+                credentials = url_parts[0]
+                host = url_parts[1]
+                redis_url = f"redis://{credentials}@{host}"
+            else:
+                # Format without credentials
+                host = redis_url.replace("https://", "")
+                redis_url = f"redis://{host}"
+            print(f"Converted URL format to: {redis_url.replace(credentials, '***')}")
+            
+        # Connect using Upstash REST client with URL and token
+        try:
+            redis = Redis(url=redis_url, token=redis_token)
+            
+            # Find keys matching interview:* pattern
             interview_keys = redis.keys("interview:*")
             
             if not interview_keys:
@@ -68,7 +97,7 @@ def get_data_from_api():
             latest_key = sorted(interview_keys, key=lambda k: int(k.split(':')[1]), reverse=True)[0]
             print(f"Found latest interview key: {latest_key}")
             
-            # Get the interview data
+            # Get the interview data as a hash
             interview_data = redis.hgetall(latest_key)
             
             if interview_data:
@@ -86,7 +115,7 @@ def get_data_from_api():
                 return None
                 
         except Exception as e:
-            print(f"Error retrieving interview data: {e}")
+            print(f"Error using Upstash Redis client: {e}")
             return None
                 
     except Exception as e:
