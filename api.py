@@ -82,7 +82,7 @@ async def get_latest_interview_openai():
     latest_interview = await get_latest_interview()
     
     # Prepare the base prompt
-    base_prompt = "Create a unique and specific prompt focusing on styling: design, font style, color scheme, animations, and blend of style/tone. It should be unique to the given info below, aligning with the goal of the user: "
+    base_prompt = "Create a paragraph focusing on style prompt: design, font style, color scheme, animations, and blend of style/tone. It should be unique to the given info below, aligning with the goal of the user: "
     
     # Format the interview data into a string for the prompt
     interview_info = "\n".join([f"{k}: {v}" for k, v in latest_interview.items()])
@@ -95,7 +95,7 @@ async def get_latest_interview_openai():
         response = client.chat.completions.create(
             model="gpt-4o", 
             messages=[
-                {"role": "system", "content": "You are a web design expert who specializes in creating unique and specific styling prompts."},
+                {"role": "system", "content": "You are a web design expert who specializes in creating unique and specific styling prompts that build websites using AI."},
                 {"role": "user", "content": full_prompt}
             ],
             temperature=0.7,
