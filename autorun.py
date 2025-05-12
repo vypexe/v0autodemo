@@ -75,11 +75,12 @@ def get_data_from_api():
                 credentials = url_parts[0]
                 host = url_parts[1]
                 redis_url = f"redis://{credentials}@{host}"
+                print(f"Converted URL format to: redis://***@{host}")
             else:
                 # Format without credentials
                 host = redis_url.replace("https://", "")
                 redis_url = f"redis://{host}"
-            print(f"Converted URL format to: {redis_url.replace(credentials, '***')}")
+                print(f"Converted URL format to: redis://{host}")
             
         # Connect using Upstash REST client with URL and token
         try:
