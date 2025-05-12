@@ -50,14 +50,13 @@ def get_data_from_api():
         if not redis_url or not redis_token:
             print("Upstash credentials not found in environment variables")
             return None
-            
-        # Make sure upstash_redis is installed
+        
+        # Import Upstash Redis client
         try:
             from upstash_redis import Redis
         except ImportError:
             print("upstash_redis library not installed. Installing...")
             try:
-                # Try to install upstash_redis if it's missing
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "upstash_redis"])
                 from upstash_redis import Redis
                 print("Successfully installed upstash_redis")
@@ -65,55 +64,41 @@ def get_data_from_api():
                 print(f"Failed to install upstash_redis: {install_err}")
                 return None
         
-        # Fix URL format if needed (convert https:// to redis://)
-        if redis_url.startswith("https://"):
-            print("Converting HTTPS URL to Redis URL format")
-            # Extract credentials and hostname from https URL
-            if "@" in redis_url:
-                # Format with credentials
-                url_parts = redis_url.replace("https://", "").split("@")
-                credentials = url_parts[0]
-                host = url_parts[1]
-                redis_url = f"redis://{credentials}@{host}"
-                print(f"Converted URL format to: redis://***@{host}")
-            else:
-                # Format without credentials
-                host = redis_url.replace("https://", "")
-                redis_url = f"redis://{host}"
-                print(f"Converted URL format to: redis://{host}")
-            
-        # Connect using Upstash REST client with URL and token
+        # Create Redis client directly with the Upstash URL and token
+        # Upstash REST API uses https:// URLs - do not modify the URL format
+        print(f"Connecting to Upstash Redis using REST API...")
+        
         try:
+            # Use the original URL and token provided in environment variables
             redis = Redis(url=redis_url, token=redis_token)
             
-            # Find keys matching interview:* pattern
+            # Find all interview keys
             interview_keys = redis.keys("interview:*")
             
             if not interview_keys:
                 print("No interview data found in Redis")
                 return None
                 
-            # Sort keys to find the most recent one (highest timestamp)
-            # interview keys are in format interview:TIMESTAMP
+            # Sort keys by timestamp (descending) to get the most recent interview
             latest_key = sorted(interview_keys, key=lambda k: int(k.split(':')[1]), reverse=True)[0]
             print(f"Found latest interview key: {latest_key}")
             
-            # Get the interview data as a hash
+            # Get all fields from the hash
             interview_data = redis.hgetall(latest_key)
             
-            if interview_data:
-                print(f"Successfully retrieved interview data from key: {latest_key}")
-                
-                # Convert the interview structure to the format expected by format_prompt
-                formatted_data = {
-                    "original_interview": interview_data,
-                    "styled_prompt": ""  # Add default styled_prompt if needed
-                }
-                
-                return formatted_data
-            else:
+            if not interview_data:
                 print(f"No data found for key: {latest_key}")
                 return None
+                
+            print(f"Successfully retrieved interview data from key: {latest_key}")
+            
+            # Format the data for the prompt generator
+            formatted_data = {
+                "original_interview": interview_data,
+                "styled_prompt": ""  # Default empty styled prompt
+            }
+            
+            return formatted_data
                 
         except Exception as e:
             print(f"Error using Upstash Redis client: {e}")
