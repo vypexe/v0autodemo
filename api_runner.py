@@ -267,14 +267,21 @@ async def get_live_viewer():
         with open("results/live-viewer.html", "r") as f:
             html_content = f.read()
         
-        # Replace the image src
-        updated_html = html_content.replace('src="latest.png"', 'src="/latest_image"')
+        # Add timestamp for cache-busting (changes on each page load)
+        timestamp = str(int(time.time()))
         
-        # Return the modified HTML
-        return Response(content=updated_html, media_type="text/html")
+        # Replace the image src with a timestamped URL to prevent caching
+        updated_html = html_content.replace('src="latest.png"', f'src="/latest_image?t={timestamp}"')
+        
+        # Return the modified HTML with cache prevention headers
+        return Response(content=updated_html, media_type="text/html", headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        })
     except Exception as e:
         return {"error": str(e)}
-    
+
 @app.get("/latest_deployment")
 async def get_latest_deployment():
     """Get the raw contents of latest_deployment.txt file"""
@@ -288,6 +295,31 @@ async def get_latest_deployment():
             return {"content": content}
         else:
             return {"error": f"File not found: {latest_file}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/latest_image")
+async def get_latest_image():
+    """Serve the latest screenshot"""
+    try:
+        results_dir = os.environ.get("RESULTS_DIR", "results")
+        latest_image = os.path.join(results_dir, "latest.png")
+        
+        # Define cache prevention headers
+        cache_headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        
+        if os.path.exists(latest_image):
+            return FileResponse(latest_image, headers=cache_headers)
+        else:
+            # Return a placeholder or default image
+            default_image = os.path.join(results_dir, "placeholder.png")
+            if os.path.exists(default_image):
+                return FileResponse(default_image, headers=cache_headers)
+            return {"error": "No screenshot available yet"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -361,24 +393,6 @@ async def stop_automation():
         return {"message": f"Automation stopped successfully. Terminated {killed_count} processes."}
     else:
         return {"message": f"No running automation to stop. Current status: {latest_status['status']}"}
-
-@app.get("/latest_image")
-async def get_latest_image():
-    """Serve the latest screenshot"""
-    try:
-        results_dir = os.environ.get("RESULTS_DIR", "results")
-        latest_image = os.path.join(results_dir, "latest.png")
-        
-        if os.path.exists(latest_image):
-            return FileResponse(latest_image)
-        else:
-            # Return a placeholder or default image
-            default_image = os.path.join(results_dir, "placeholder.png")
-            if os.path.exists(default_image):
-                return FileResponse(default_image)
-            return {"error": "No screenshot available yet"}
-    except Exception as e:
-        return {"error": str(e)}
 
 @app.get("/debug")
 async def debug_info():
