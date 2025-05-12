@@ -4,12 +4,30 @@ import time
 import os
 import json
 import shutil
+import subprocess
 
 # Check for command-line overrides via environment variables
 HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
 PROMPT_OVERRIDE = os.environ.get("PROMPT_OVERRIDE", None)
 SKIP_SCREENSHOTS = os.environ.get("SKIP_SCREENSHOTS", "false").lower() == "true"
 RESULTS_DIR = os.environ.get("RESULTS_DIR", "results")
+
+def ensure_playwright_browsers_installed():
+    """Ensure that Playwright browsers are installed"""
+    print("Checking if Playwright browsers are installed...")
+    try:
+        # Try to run a browser check command
+        result = subprocess.run(
+            ["playwright", "install", "chromium"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            print("Playwright browsers installed successfully.")
+        else:
+            print(f"Error installing browsers: {result.stderr}")
+    except Exception as e:
+        print(f"Exception during browser installation: {e}")
 
 def get_data_from_api():
     try:
@@ -137,6 +155,8 @@ def take_screenshot(page, path, message, results_dir):
         f.write(f"{message}\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 def run():
+    ensure_playwright_browsers_installed()
+    
     # Get prompt from API or use override
     if PROMPT_OVERRIDE:
         print(f"Using prompt override from API call")
