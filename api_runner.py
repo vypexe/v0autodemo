@@ -261,35 +261,131 @@ async def get_latest():
 
 @app.get("/viewer")
 async def get_live_viewer():
-    try:
-        # Check if the viewer file exists
-        viewer_path = "results/live-viewer.html"
-        if not os.path.exists(viewer_path):
-            # Return a meaningful error if the file doesn't exist
-            return {"error": f"Live viewer file not found at {viewer_path}. Make sure an automation has been run."}
-        
-        with open(viewer_path, "r") as f:
-            html_content = f.read()
-        
-        # Add timestamp parameter to force browser to reload image
-        timestamp = str(int(time.time()))
-        
-        # Make sure to use the absolute URL with the correct endpoint
-        updated_html = html_content.replace('src="latest.png"', f'src="/latest_image?t={timestamp}"')
-        
-        # Add cache prevention headers
-        headers = {
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0"
-        }
-        
-        return Response(content=updated_html, media_type="text/html", headers=headers)
-    except Exception as e:
-        # Return a more detailed error response
-        import traceback
-        error_details = traceback.format_exc()
-        return {"error": str(e), "details": error_details}
+    """Simple HTML page to view the automation in progress"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>v0.dev Automation Viewer</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+                text-align: center;
+                background-color: #f5f5f5;
+            }
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            }
+            h1 {
+                color: #333;
+            }
+            .screenshot {
+                max-width: 100%;
+                border: 1px solid #ddd;
+                margin: 20px 0;
+            }
+            .info {
+                margin: 20px 0;
+                padding: 10px;
+                background-color: #f8f8f8;
+                border-radius: 4px;
+                text-align: left;
+            }
+            .refresh-btn {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 16px;
+                margin: 10px 2px;
+                cursor: pointer;
+                border-radius: 4px;
+            }
+            .timestamp {
+                font-size: 14px;
+                color: #666;
+            }
+        </style>
+        <script>
+            // Refresh the image every 2 seconds
+            function refreshImage() {
+                const img = document.getElementById('screenshotImg');
+                const timestamp = new Date().getTime();
+                img.src = '/latest_image?' + timestamp;
+                
+                // Update timestamp
+                document.getElementById('timestamp').innerText = new Date().toLocaleString();
+                
+                // Also fetch and update status
+                fetch('/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('status').innerText = data.status;
+                        
+                        // If there's a deployed URL, show it
+                        if (data.deployed_url) {
+                            const deployedLink = document.getElementById('deployedLink');
+                            deployedLink.href = data.deployed_url;
+                            deployedLink.innerText = data.deployed_url;
+                            document.getElementById('deployedUrlContainer').style.display = 'block';
+                        }
+                    })
+                    .catch(error => console.error('Error fetching status:', error));
+            }
+            
+            // Initial load and set interval
+            window.onload = function() {
+                refreshImage();
+                setInterval(refreshImage, 2000);
+            };
+            
+            // Manual refresh button
+            function manualRefresh() {
+                refreshImage();
+            }
+        </script>
+    </head>
+    <body>
+        <div class="container">
+            <h1>v0.dev Automation Progress</h1>
+            
+            <div class="info">
+                <p>Current status: <strong id="status">Loading...</strong></p>
+                <div id="deployedUrlContainer" style="display: none;">
+                    <p>Deployed URL: <a id="deployedLink" href="#" target="_blank"></a></p>
+                </div>
+                <p class="timestamp">Last updated: <span id="timestamp"></span></p>
+            </div>
+            
+            <img id="screenshotImg" class="screenshot" src="/latest_image" alt="Latest Screenshot" 
+                 onerror="this.onerror=null; this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAAH0CAIAAABEtEjdAAAACXBIWXMAAAsTAAALEwEAmpwYAAABMklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEfUgAABRZJjdwAAAABJRU5ErkJggg=='"/>
+            
+            <div>
+                <button class="refresh-btn" onclick="manualRefresh()">Refresh Now</button>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Add cache prevention headers
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
+    
+    return Response(content=html_content, media_type="text/html", headers=headers)
 
 @app.get("/latest_image")
 async def get_latest_image():
@@ -417,81 +513,202 @@ async def stop_automation():
     else:
         return {"message": f"No running automation to stop. Current status: {latest_status['status']}"}
 
+
 @app.get("/debug")
 async def debug_info():
-    """Provide detailed diagnostic information for troubleshooting"""
+    """Comprehensive system diagnostics combining debug and monitoring information"""
     import socket
     import platform
     import os
     import sys
     import requests
     import traceback
+    import psutil
+    
+    # Get current time for age calculations
+    current_time = time.time()
     
     debug_data = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "system_info": {
             "hostname": socket.gethostname(),
             "platform": platform.platform(),
             "python_version": sys.version,
             "process_id": os.getpid(),
             "working_directory": os.getcwd(),
+            "memory_usage_percent": psutil.virtual_memory().percent,
+            "cpu_usage_percent": psutil.cpu_percent(interval=0.1),
         },
         "api_status": {
             "current_status": latest_status,
-            "active_processes": list(running_processes.keys())
-        },
-        "upstash_config": {
-            "redis_url_configured": bool(os.environ.get("REDIS_URL")),
-            "redis_token_configured": bool(os.environ.get("REDIS_TOKEN")),
-            "redis_url_redacted": os.environ.get("REDIS_URL", "").replace("://", "://***:***@") if os.environ.get("REDIS_URL") else None,
+            "active_processes": list(running_processes.keys()),
+            "status_age_seconds": time.time() - time.mktime(time.strptime(latest_status["timestamp"], "%Y-%m-%d %H:%M:%S")) if latest_status.get("timestamp") else None
         },
         "env_vars": {
-            "key_env_vars_present": [k for k in os.environ.keys() 
-                                   if k in ["REDIS_URL", "REDIS_TOKEN", "HEADLESS", "PROMPT_OVERRIDE", "SKIP_SCREENSHOTS", "RESULTS_DIR", "OPENAI_API_KEY"]]
+            "key_env_vars": {k: "***REDACTED***" if k in ["OPENAI_API_KEY", "REDIS_TOKEN"] else os.environ.get(k) 
+                          for k in ["REDIS_URL", "REDIS_TOKEN", "HEADLESS", "PROMPT_OVERRIDE", "SKIP_SCREENSHOTS", "RESULTS_DIR", "OPENAI_API_KEY"]
+                          if k in os.environ}
         },
-        "viewer_info": {
-            "live_viewer_exists": os.path.exists("results/live-viewer.html"),
-            "live_viewer_size": os.path.getsize("results/live-viewer.html") if os.path.exists("results/live-viewer.html") else 0,
-            "latest_png_exists": os.path.exists("results/latest.png"),
-            "latest_png_size": os.path.getsize("results/latest.png") if os.path.exists("results/latest.png") else 0,
-            "latest_png_timestamp": os.path.getmtime("results/latest.png") if os.path.exists("results/latest.png") else None,
-            "results_dir_contents": os.listdir("results") if os.path.exists("results") else []
-        }
     }
+    
+    # Process information
+    process_info = []
+    for pid in running_processes.keys():
+        try:
+            if psutil.pid_exists(pid):
+                proc = psutil.Process(pid)
+                process_info.append({
+                    "pid": pid,
+                    "status": proc.status(),
+                    "cpu_percent": proc.cpu_percent(interval=0.1),
+                    "memory_percent": proc.memory_percent(),
+                    "create_time": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(proc.create_time())),
+                    "running_time_seconds": current_time - proc.create_time(),
+                    "cmdline": proc.cmdline()
+                })
+            else:
+                process_info.append({
+                    "pid": pid,
+                    "status": "not_exists",
+                    "error": "Process no longer exists but still tracked"
+                })
+        except Exception as e:
+            process_info.append({
+                "pid": pid,
+                "status": "error",
+                "error": str(e)
+            })
+    
+    debug_data["processes"] = process_info
+    
+    # Screenshot and results directory information
+    results_dir = os.environ.get("RESULTS_DIR", "results")
+    debug_data["files"] = {
+        "results_dir_exists": os.path.exists(results_dir),
+        "auth_json_exists": os.path.exists("auth.json"),
+        "auth_json_size": os.path.getsize("auth.json") if os.path.exists("auth.json") else 0,
+    }
+    
+    # Screenshot files information
+    if os.path.exists(results_dir):
+        files = os.listdir(results_dir)
+        debug_data["files"]["results_dir_contents"] = files
+        
+        # Get information about PNG files
+        png_files = []
+        for f in files:
+            if f.endswith('.png'):
+                file_path = os.path.join(results_dir, f)
+                png_files.append({
+                    "name": f,
+                    "size_bytes": os.path.getsize(file_path),
+                    "modified": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(file_path))),
+                    "age_seconds": current_time - os.path.getmtime(file_path)
+                })
+        
+        # Sort by modification time, newest first
+        png_files.sort(key=lambda x: x["age_seconds"])
+        debug_data["screenshots"] = png_files
     
     # Test Upstash connectivity
     try:
         import redis
-        debug_data["upstash_test"] = {}
+        debug_data["upstash"] = {}
         
         # Check if we have Redis URL
         redis_url = os.environ.get("REDIS_URL")
         if not redis_url:
-            debug_data["upstash_test"]["error"] = "REDIS_URL environment variable not set"
+            debug_data["upstash"]["error"] = "REDIS_URL environment variable not set"
         else:
+            debug_data["upstash"]["url_configured"] = True
+            debug_data["upstash"]["token_configured"] = bool(os.environ.get("REDIS_TOKEN"))
+            
             try:
                 # Try to connect to Redis
                 r = redis.from_url(redis_url)
                 ping_result = r.ping()
-                debug_data["upstash_test"]["connection"] = "successful" if ping_result else "failed"
+                debug_data["upstash"]["connection"] = "successful" if ping_result else "failed"
                 
                 # Try to get interview data
                 try:
                     latest_data = r.get("latest_interview")
-                    debug_data["upstash_test"]["latest_interview_exists"] = latest_data is not None
+                    debug_data["upstash"]["latest_interview_exists"] = latest_data is not None
+                    
                     if latest_data:
-                        # Just get the keys, not the actual data for privacy
-                        import json
                         try:
-                            data_keys = list(json.loads(latest_data).keys())
-                            debug_data["upstash_test"]["latest_interview_keys"] = data_keys
-                        except:
-                            debug_data["upstash_test"]["latest_interview_parse_error"] = "Could not parse JSON data"
+                            data = json.loads(latest_data)
+                            debug_data["upstash"]["data_keys"] = list(data.keys())
+                            
+                            # Include original_interview keys if present
+                            if "original_interview" in data and isinstance(data["original_interview"], dict):
+                                debug_data["upstash"]["original_interview_keys"] = list(data["original_interview"].keys())
+                        except Exception as e:
+                            debug_data["upstash"]["parse_error"] = str(e)
                 except Exception as e:
-                    debug_data["upstash_test"]["get_data_error"] = str(e)
+                    debug_data["upstash"]["get_data_error"] = str(e)
             except Exception as e:
-                debug_data["upstash_test"]["connection_error"] = str(e)
+                debug_data["upstash"]["connection_error"] = str(e)
     except ImportError:
-        debug_data["upstash_test"] = {"error": "Redis library not installed"}
+        debug_data["upstash"] = {"error": "Redis library not installed"}
+    
+    # Check OpenAI configuration
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    debug_data["openai"] = {
+        "api_key_configured": bool(openai_api_key),
+        "api_key_length": len(openai_api_key) if openai_api_key else 0
+    }
+    
+    # Test OpenAI connectivity (if key is available)
+    if openai_api_key:
+        try:
+            import openai
+            openai.api_key = openai_api_key
+            
+            # Try both API versions
+            try:
+                # Try newer client first
+                client = openai.OpenAI(api_key=openai_api_key)
+                models = client.models.list()
+                debug_data["openai"]["connection"] = "successful"
+                debug_data["openai"]["api_version"] = "newer OpenAI client"
+                debug_data["openai"]["models_count"] = len(list(models.data)) if hasattr(models, 'data') else "unknown"
+            except Exception as e:
+                # Try legacy version
+                try:
+                    model_list = openai.Model.list()
+                    debug_data["openai"]["connection"] = "successful"
+                    debug_data["openai"]["api_version"] = "legacy OpenAI client"
+                    debug_data["openai"]["models_count"] = len(model_list.data) if hasattr(model_list, 'data') else "unknown"
+                except Exception as alt_e:
+                    debug_data["openai"]["connection"] = "failed"
+                    debug_data["openai"]["error"] = str(e)
+                    debug_data["openai"]["legacy_error"] = str(alt_e)
+        except ImportError:
+            debug_data["openai"]["error"] = "OpenAI library not installed"
+    
+    # Test format_prompt function
+    try:
+        from autorun import get_data_from_api, format_prompt
+        api_data = get_data_from_api()
+        debug_data["prompt_test"] = {
+            "api_data_retrieved": api_data is not None,
+            "api_data_keys": list(api_data.keys()) if api_data else None
+        }
+        
+        if api_data:
+            try:
+                formatted_prompt = format_prompt(api_data)
+                debug_data["prompt_test"]["format_success"] = True
+                debug_data["prompt_test"]["prompt_length"] = len(formatted_prompt)
+                debug_data["prompt_test"]["prompt_preview"] = formatted_prompt[:200] + "..." if len(formatted_prompt) > 200 else formatted_prompt
+            except Exception as e:
+                debug_data["prompt_test"]["format_error"] = str(e)
+                debug_data["prompt_test"]["traceback"] = traceback.format_exc()
+    except Exception as e:
+        debug_data["prompt_test"] = {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
     
     # Test internet connectivity
     try:
@@ -500,241 +717,50 @@ async def debug_info():
     except Exception as e:
         debug_data["connectivity"] = {"internet": "offline", "error": str(e)}
     
-    # Test localhost API (if that's being used)
-    try:
-        response = requests.get("http://localhost:8000/interview/latest/openai", timeout=2)
-        debug_data["local_api"] = {
-            "status_code": response.status_code,
-            "working": response.status_code == 200
-        }
-    except Exception as e:
-        debug_data["local_api"] = {"error": str(e), "working": False}
-    
-    # Check for auth.json file which may be needed for v0.dev
-    debug_data["file_check"] = {
-        "auth_json_exists": os.path.exists("auth.json"),
-        "auth_json_size": os.path.getsize("auth.json") if os.path.exists("auth.json") else 0,
-        "results_dir_exists": os.path.exists("results"),
-    }
-    
-    # Check OpenAI API key
-    openai_api_key = os.environ.get("OPENAI_API_KEY")
-    debug_data["openai_config"] = {
-        "api_key_configured": bool(openai_api_key),
-        "api_key_length": len(openai_api_key) if openai_api_key else 0,
-        "api_key_prefix": openai_api_key[:4] + "..." if openai_api_key and len(openai_api_key) > 4 else None
-    }
-    
-    # Test OpenAI connectivity (if key is available)
-    if openai_api_key:
-        try:
-            import openai
-            openai.api_key = openai_api_key
-            # Try to list models - this will validate the API key
-            try:
-                model_list = openai.Model.list()
-                debug_data["openai_test"] = {
-                    "connection": "successful",
-                    "models_available": len(model_list.data) > 0 if hasattr(model_list, 'data') else False
-                }
-            except Exception as e:
-                debug_data["openai_test"] = {"connection_error": str(e)}
-                
-                # Try an alternative API endpoint if the main one failed
-                try:
-                    # Check if it's the newer API version
-                    client = openai.OpenAI(api_key=openai_api_key)
-                    models = client.models.list()
-                    debug_data["openai_test"]["alternative_api"] = "working"
-                    debug_data["openai_test"]["api_version"] = "newer OpenAI client"
-                except Exception as alt_e:
-                    debug_data["openai_test"]["alternative_api_error"] = str(alt_e)
-        except ImportError:
-            debug_data["openai_test"] = {"error": "OpenAI library not installed"}
-    else:
-        debug_data["openai_test"] = {"error": "OpenAI API key not configured"}
-    
-    # Try to get the Upstash data using the same path as in get_data_from_api
-    try:
-        from autorun import get_data_from_api, format_prompt
-        api_data = get_data_from_api()
-        debug_data["autorun_api_test"] = {
-            "get_data_from_api_result": "successful" if api_data else "failed",
-            "data_keys": list(api_data.keys()) if api_data else None
-        }
-        
-        # Test the format_prompt function
-        if api_data:
-            try:
-                formatted_prompt = format_prompt(api_data)
-                debug_data["prompt_formatting"] = {
-                    "success": True,
-                    "prompt_length": len(formatted_prompt),
-                    "prompt_preview": formatted_prompt[:100] + "..." if len(formatted_prompt) > 100 else formatted_prompt,
-                    "contains_styled_prompt": "styled_prompt" in api_data and bool(api_data["styled_prompt"]),
-                    "original_interview_exists": "original_interview" in api_data and bool(api_data["original_interview"])
-                }
-                
-                # More detailed inspection of the original_interview data
-                if "original_interview" in api_data and api_data["original_interview"]:
-                    original_interview = api_data["original_interview"]
-                    debug_data["original_interview_data"] = {
-                        "has_name": "name" in original_interview and bool(original_interview["name"]),
-                        "has_initial_request": "initial_request" in original_interview and bool(original_interview["initial_request"]),
-                        "has_product_info": "product_info" in original_interview and bool(original_interview["product_info"]),
-                        "has_website_examples": "website_examples" in original_interview and bool(original_interview["website_examples"])
-                    }
-            except Exception as e:
-                debug_data["prompt_formatting"] = {
-                    "success": False,
-                    "error": str(e),
-                    "traceback": traceback.format_exc()
-                }
-    except Exception as e:
-        debug_data["autorun_api_test"] = {"error": str(e), "traceback": traceback.format_exc()}
-    
     return debug_data
 
 @app.get("/latest_image")
 async def get_latest_image():
-    try:
-        results_dir = os.environ.get("RESULTS_DIR", "results")
-        latest_image = os.path.join(results_dir, "latest.png")
+    """Serve the most recent screenshot with forced cache prevention"""
+    results_dir = os.environ.get("RESULTS_DIR", "results")
+    
+    # Ensure results directory exists
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir, exist_ok=True)
+        return Response(
+            content=json.dumps({"error": "No screenshots available yet"}),
+            media_type="application/json"
+        )
+    
+    # Find all PNG files and sort by modification time (newest first)
+    png_files = []
+    for file in os.listdir(results_dir):
+        if file.endswith('.png'):
+            file_path = os.path.join(results_dir, file)
+            png_files.append((file_path, os.path.getmtime(file_path)))
+    
+    # Sort by modification time, newest first
+    png_files.sort(key=lambda x: x[1], reverse=True)
+    
+    # If there are PNG files, serve the newest one
+    if png_files:
+        newest_image = png_files[0][0]
         
-        # Add cache prevention headers - strengthen these to force browser refresh
+        # Force cache prevention with strong headers
         headers = {
             "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
             "Pragma": "no-cache",
             "Expires": "0",
-            "X-Image-Time": str(int(time.time()))  # Add timestamp to response headers
+            "X-Timestamp": str(int(time.time()))
         }
         
-        # Add debug info to log
-        if os.path.exists(latest_image):
-            image_age = time.time() - os.path.getmtime(latest_image)
-            print(f"Serving image {latest_image}, age: {image_age:.2f} seconds")
-            
-            # Check if image is recent (less than 5 minutes old)
-            if image_age > 300:  # 5 minutes
-                print(f"WARNING: Image is older than 5 minutes ({image_age:.2f} seconds)")
-            
-            return FileResponse(latest_image, media_type="image/png", headers=headers)
-        else:
-            print(f"Image not found: {latest_image}")
-            
-            # Check results directory contents for debugging
-            if os.path.exists(results_dir):
-                files = os.listdir(results_dir)
-                png_files = [f for f in files if f.endswith('.png')]
-                print(f"Available PNG files in {results_dir}: {png_files}")
-                
-                # If there are any PNG files, serve the most recent one
-                if png_files:
-                    png_files.sort(key=lambda f: os.path.getmtime(os.path.join(results_dir, f)), reverse=True)
-                    most_recent = os.path.join(results_dir, png_files[0])
-                    print(f"Serving most recent PNG: {most_recent}")
-                    return FileResponse(most_recent, media_type="image/png", headers=headers)
-            else:
-                print(f"Results directory not found: {results_dir}")
-                os.makedirs(results_dir, exist_ok=True)
-            
-            # If we reach here, return a JSON response with error details
-            return Response(
-                content=json.dumps({
-                    "error": "No screenshots available",
-                    "results_dir": results_dir,
-                    "exists": os.path.exists(results_dir),
-                    "process_status": latest_status
-                }),
-                media_type="application/json",
-                headers=headers
-            )
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"Error serving latest image: {str(e)}\n{error_details}")
+        # Return the newest image
+        return FileResponse(newest_image, media_type="image/png", headers=headers)
+    else:
         return Response(
-            content=json.dumps({"error": str(e), "details": error_details}),
+            content=json.dumps({"error": "No screenshots available in results directory"}),
             media_type="application/json"
         )
-
-@app.get("/monitor")
-async def monitor_status():
-    """Provide detailed status about the current automation run"""
-    import psutil
-    
-    try:
-        # Get current time for age calculations
-        current_time = time.time()
-        
-        # Status information
-        status_info = {
-            "current_status": latest_status,
-            "active_processes": list(running_processes.keys()),
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        
-        # Screenshot information
-        results_dir = os.environ.get("RESULTS_DIR", "results")
-        latest_image = os.path.join(results_dir, "latest.png")
-        
-        status_info["screenshot"] = {
-            "exists": os.path.exists(latest_image),
-            "age_seconds": current_time - os.path.getmtime(latest_image) if os.path.exists(latest_image) else None,
-            "size_bytes": os.path.getsize(latest_image) if os.path.exists(latest_image) else 0,
-        }
-        
-        # Process information
-        process_info = []
-        for pid in running_processes.keys():
-            try:
-                if psutil.pid_exists(pid):
-                    proc = psutil.Process(pid)
-                    process_info.append({
-                        "pid": pid,
-                        "status": proc.status(),
-                        "cpu_percent": proc.cpu_percent(interval=0.1),
-                        "memory_percent": proc.memory_percent(),
-                        "create_time": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(proc.create_time())),
-                        "running_time_seconds": current_time - proc.create_time(),
-                    })
-                else:
-                    process_info.append({
-                        "pid": pid,
-                        "status": "not_exists",
-                    })
-            except Exception as e:
-                process_info.append({
-                    "pid": pid,
-                    "status": "error",
-                    "error": str(e)
-                })
-        
-        status_info["processes"] = process_info
-        
-        # Recent activity
-        if os.path.exists(results_dir):
-            files = os.listdir(results_dir)
-            png_files = [f for f in files if f.endswith('.png')]
-            
-            recent_files = []
-            for png_file in sorted(png_files, key=lambda f: os.path.getmtime(os.path.join(results_dir, f)), reverse=True)[:5]:
-                file_path = os.path.join(results_dir, png_file)
-                recent_files.append({
-                    "name": png_file,
-                    "modified": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(file_path))),
-                    "age_seconds": current_time - os.path.getmtime(file_path),
-                    "size_bytes": os.path.getsize(file_path),
-                })
-            
-            status_info["recent_files"] = recent_files
-        
-        return status_info
-        
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        return {"error": str(e), "details": error_details}
 
 # Added a simple welcome endpoint for testing
 @app.get("/")

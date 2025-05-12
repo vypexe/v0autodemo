@@ -117,86 +117,44 @@ def format_prompt(api_data):
     try:
         original_interview = api_data.get("original_interview", {}) or {}
         
-        name = original_interview.get("name", "")
-        initial_request = original_interview.get("initial_request", "")
-        product_info = original_interview.get("product_info", "")
-        website_examples = original_interview.get("website_examples", "")
-        
         # Check if OpenAI API key exists
         openai_api_key = os.environ.get("OPENAI_API_KEY")
-        if openai_api_key:
-            try:
-                import openai
-                
-                # First, create a base prompt with the essential information
-                base_prompt = f"""
-Based on the following requirements:
-- Project name: {name}
-- Initial request: {initial_request}
-- Product information: {product_info}
-- Website inspiration: {website_examples}
-"""
-                
-                # Use OpenAI to create a styled, specific prompt
-                client = openai.OpenAI(api_key=openai_api_key)
-                response = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "You are a web design expert specializing in creating detailed and specific design prompts."},
-                        {"role": "user", "content": f"""Based on this information: {base_prompt}
-                        
-Create a detailed, paragraph-style prompt with unique and appropriate specific style instructions including:
-1. Font style recommendations (specific font families, sizes, weights)
-2. Design style (minimalist, bold, corporate, playful, etc.)
-3. Structural design elements (layout, sections, spacing)
-4. Color palette suggestions
-5. Visual elements and imagery style
-
-Make it specific and unique to the project goals. Be detailed and prescriptive in your recommendations."""}
-                    ],
-                    max_tokens=800
-                )
-                
-                # Get the styled prompt from OpenAI
-                styled_prompt = response.choices[0].message.content
-                print("Successfully generated styled prompt with OpenAI")
-                
-                # Create the final formatted prompt
-                formatted_prompt = f"""
-{styled_prompt}
-
-Please create a beautiful, professional website with a clean, modern layout, optimized for both desktop and mobile view.
-"""
-                return formatted_prompt.strip()
-                
-            except Exception as e:
-                print(f"Error generating styled prompt with OpenAI: {str(e)}")
-                # Fall back to basic prompt if OpenAI fails
+        if not openai_api_key:
+            print("ERROR: No OpenAI API key found in environment variables")
+            return "Error: OpenAI API key not configured"
+            
+        # Create the input data for OpenAI
+        upstash_data = json.dumps(original_interview, indent=2)
         
-        # Fallback if no OpenAI key or if the API call failed
-        # Create a more detailed prompt even without OpenAI
-        fallback_prompt = f"""
-Create a professional website for "{name}" with the following requirements:
-- {initial_request}
-- Include all information about: {product_info}
-- Use design inspiration from: {website_examples}
-
-The website should feature:
-- A modern, clean typography with sans-serif fonts for readability
-- A professional color scheme that conveys trust and expertise
-- Clear navigation and intuitive user interface
-- Responsive design for all devices
-- Well-organized sections that highlight key information
-- Appropriate spacing and visual hierarchy
-
-Please create a beautiful, professional website with a clean, modern layout, optimized for both desktop and mobile view.
-"""
-        return fallback_prompt.strip()
-        
+        # Use OpenAI to create a styled, specific prompt
+        try:
+            import openai
+            client = openai.OpenAI(api_key=openai_api_key)
+            
+            # Send the upstash data to OpenAI for processing
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are a web design expert specializing in creating detailed design prompts."},
+                    {"role": "user", "content": f"Create a paragraph style prompt using this data:\n\n{upstash_data}\n\nAlign it with the project goal. Focus on specific aspects of unique style, specific font types, and design/structure as well as any unique animations that would enhance the user experience."}
+                ],
+                max_tokens=800
+            )
+            
+            # Get the styled prompt from OpenAI
+            styled_prompt = response.choices[0].message.content
+            print("Successfully generated styled prompt with OpenAI")
+            
+            # Return the styled prompt directly - don't add anything else to it
+            return styled_prompt.strip()
+            
+        except Exception as e:
+            print(f"ERROR using OpenAI API: {str(e)}")
+            return f"Error using OpenAI API: {str(e)}"
+    
     except Exception as e:
-        # Log the error and provide a fallback prompt
         print(f"Error formatting prompt: {str(e)}")
-        return f"Create a professional website based on the available information. Error occurred during prompt formatting: {str(e)}"
+        return f"Error formatting prompt: {str(e)}"
 
 def clear_directory(directory):
     """Clear all files in a directory without removing the directory itself"""
