@@ -568,5 +568,21 @@ def run():
             except:
                 pass
 
+def clear_directory(directory):
+    """Clear all files in the specified directory except .gitkeep"""
+    for item in os.listdir(directory):
+        # Skip .gitkeep files
+        if item == '.gitkeep':
+            continue
+            
+        path = os.path.join(directory, item)
+        try:
+            if os.path.isfile(path):
+                os.unlink(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
+        except Exception as e:
+            print(f"Error clearing {path}: {e}")
+
 if __name__ == "__main__":
     run()
