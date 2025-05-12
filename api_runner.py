@@ -259,26 +259,49 @@ async def get_latest():
     else:
         return {"message": "No deployment available yet"}
 
+# In api_runner.py - Update the viewer endpoint
 @app.get("/viewer")
 async def get_live_viewer():
-    """Serve the live-viewer.html file with updated image path"""
     try:
-        # Read the template
         with open("results/live-viewer.html", "r") as f:
             html_content = f.read()
         
-        # Add timestamp for cache-busting (changes on each page load)
+        # Add timestamp parameter to force browser to reload image
         timestamp = str(int(time.time()))
-        
-        # Replace the image src with a timestamped URL to prevent caching
         updated_html = html_content.replace('src="latest.png"', f'src="/latest_image?t={timestamp}"')
         
-        # Return the modified HTML with cache prevention headers
-        return Response(content=updated_html, media_type="text/html", headers={
+        # Add cache prevention headers
+        headers = {
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0"
-        })
+        }
+        
+        return Response(content=updated_html, media_type="text/html", headers=headers)
+    except Exception as e:
+        return {"error": str(e)}
+
+# Also update the image endpoint
+@app.get("/latest_image")
+async def get_latest_image():
+    try:
+        results_dir = os.environ.get("RESULTS_DIR", "results")
+        latest_image = os.path.join(results_dir, "latest.png")
+        
+        # Add cache prevention headers
+        headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        
+        if os.path.exists(latest_image):
+            return FileResponse(latest_image, headers=headers)
+        else:
+            default_image = os.path.join(results_dir, "placeholder.png")
+            if os.path.exists(default_image):
+                return FileResponse(default_image, headers=headers)
+            return {"error": "No screenshot available yet"}
     except Exception as e:
         return {"error": str(e)}
 
