@@ -316,44 +316,54 @@ def run():
                 results_dir
             )
             
-            # Instead of pressing Enter, find and click the specific submit button
+                # Instead of pressing Enter, find and click the specific submit button
             print("Looking for submit button...")
 
-            # Try multiple approaches to finding and clicking the button
-            try:
-                # First wait to make sure button is clickable
-                page.wait_for_selector("button[data-testid='prompt-form-send-button']", state="visible", timeout=5000)
-    
-                # Try using force click which bypasses some checks
-                page.click("button[data-testid='prompt-form-send-button']", force=True)
-                print("Button clicked with force option")
-    
-                # Wait a moment to see if it worked
+            # Try to find the button with the exact data-testid
+            submit_button = page.locator("button[data-testid='prompt-form-send-button']")
+
+            if submit_button.count() > 0:
+                print("Found submit button by data-testid, clicking it...")
+                # Wait longer before clicking
                 page.wait_for_timeout(2000)
-    
-                # Fallback: Try pressing Enter in the input field
-                input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
-                if input_field.count() > 0:
-                    print("Pressing Enter in the input field as fallback")
-                    input_field.press("Enter")
-        
-                # Another fallback: Use JavaScript to click the button
-                print("Using JavaScript to click the button")
-                page.evaluate("""
-                () => {
-                    const button = document.querySelector('button[data-testid="prompt-form-send-button  "]');
-                    if (button) {
-                        button.click();
-                        return true;
-                    }
-                    return false;
-                }
-                """)
-    
-                # Take a debug screenshot
-                page.screenshot(path=os.path.join(results_dir, "after_button_clicks.png"))
-            except Exception as e:
-                print(f"Error when clicking button: {str(e)}")
+                # Try force click which may help with some click issues
+                submit_button.click(force=True)
+                print("Button clicked with force option")
+            else:
+                # Fallback to other methods of finding the button
+                print("Submit button not found by data-testid, trying alternative methods...")
+                
+                # Try to find by SVG inside the button (the arrow icon)
+                svg_button = page.locator("button:has(svg[data-testid='geist-icon'])")
+                if svg_button.count() > 0:
+                    print("Found submit button by SVG icon, clicking it...")
+                    svg_button.click(force=True)
+                else:
+                    # Last resort - try to use JavaScript to find and click the button
+                    print("Trying to click submit button using JavaScript...")
+                    page.evaluate("""
+                        () => {
+                            const buttons = Array.from(document.querySelectorAll('button'));
+                            const submitButton = buttons.find(button => 
+                                button.innerHTML.includes('svg') && 
+                                (button.getAttribute('data-testid') === 'prompt-form-send-button' || 
+                                button.classList.contains('ml-1'))
+                            );
+                            if (submitButton) {
+                                submitButton.click();
+                                return true;
+                            }
+                            return false;
+                        }
+                    """)
+
+            # Add an extra fallback - press Enter on the input field
+            print("Also trying to press Enter in the input field as a fallback")
+            input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
+            if input_field.count() > 0:
+                input_field.press("Enter")
+
+            print("Prompt submitted")
             
             # Take screenshot after submitting
             take_screenshot(
