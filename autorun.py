@@ -138,7 +138,7 @@ def format_prompt(api_data):
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a web design expert specializing in creating detailed design prompts."},
-                    {"role": "user", "content": f"Create a paragraph style prompt using this data:\n\n{upstash_data}\n\nAlign it with the project goal. Focus on specific aspects of unique style, specific font types, and design/structure as well as any unique animations that would enhance the user experience."}
+                    {"role": "user", "content": f"Create a single paragraph WITH NO NEW LINES (ALL IN ONE PARAGRAPH) prompt using this data:\n\n{upstash_data}\n\nAlign it with the project goal. Focus on specific aspects of unique style, specific font types, and design/structure as well as any unique animations that would enhance the user experience."}
                 ],
                 max_tokens=800
             )
@@ -310,7 +310,7 @@ def run():
             # Fill the prompt
             print("Filling with prompt...")
             input_field.fill(prompt)
-            
+
             # Take screenshot after filling prompt
             take_screenshot(
                 page, 
