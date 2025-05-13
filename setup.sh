@@ -17,4 +17,6 @@ export PLAYWRIGHT_BROWSERS_PATH=/tmp/playwright-browsers
 pip install playwright==1.30.0  # Install specific version
 playwright install chromium --with-deps
 
+export DEBUG=playwright:*
+
 echo "Setup completed successfully"
