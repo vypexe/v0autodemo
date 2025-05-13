@@ -302,6 +302,7 @@ def run():
             # Wait to make sure the page is interactive
             page.wait_for_timeout(3000)
             
+            # Look for input field
             print("Looking for input field...")
             input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
             input_field.wait_for(state="visible")
@@ -310,12 +311,15 @@ def run():
             print("Filling with prompt...")
             input_field.fill(prompt)
 
-            # Press Enter to submit the form
-            print("Pressing Enter to submit prompt...")
-            input_field.press("Enter")
+            # Find and click the submit button using the data-testid
+            print("Finding and clicking submit button...")
+            submit_button = page.locator("button[data-testid='prompt-form-send-button']")
+            submit_button.wait_for(state="visible")
+            page.wait_for_timeout(1000)  # Small delay to ensure button is ready
+            submit_button.click()
 
-            print("Prompt submitted")
-                        
+            print("Prompt submitted via button click")
+
             # Take screenshot after filling prompt
             take_screenshot(
                 page, 
