@@ -226,12 +226,16 @@ def take_screenshot(page, path, message, results_dir):
     if SKIP_SCREENSHOTS:
         return
     
-    # Take the screenshot with proper dimensions
-    page.screenshot(path=path, clip={"x": 0, "y": 0, "width": 1000, "height": 700})
-    
-    # Also save to latest.png for live viewing
-    latest_path = os.path.join(results_dir, "latest.png")
-    page.screenshot(path=latest_path, clip={"x": 0, "y": 0, "width": 1000, "height": 700})
+    try:
+        # Take the screenshot with proper dimensions and increased timeout
+        page.screenshot(path=path, clip={"x": 0, "y": 0, "width": 1000, "height": 700}, timeout=60000)
+        
+        # Also save to latest.png for live viewing
+        latest_path = os.path.join(results_dir, "latest.png")
+        page.screenshot(path=latest_path, clip={"x": 0, "y": 0, "width": 1000, "height": 700}, timeout=60000)
+    except Exception as e:
+        print(f"Warning: Screenshot failed - {str(e)}")
+        # Still update the status even if screenshot fails
     
     # Update status file
     with open(os.path.join(results_dir, "status.txt"), "w") as f:
