@@ -338,9 +338,8 @@ def run():
 
             try:
                 # STEP 1: Wait for the initial Deploy button to appear (may take a while for generation)
-                print("Waiting for Deploy button to appear (this may take several minutes)...")
-                page.wait_for_selector("button:has-text('Deploy')", timeout=600000)  # 10 minute timeout
-                print("Deploy button found!")
+                deploy_button_selector = "button:has(span:has(svg) + :text('Deploy'))"
+                page.wait_for_selector(deploy_button_selector, timeout=600000)  # 10 minute timeout
                 
                 # Take a screenshot before initial deployment
                 timestamp = time.strftime('%Y%m%d-%H%M%S')
@@ -352,7 +351,7 @@ def run():
                 )
                 
                 # Click the Deploy button
-                deploy_button = page.locator("button:has-text('Deploy')")
+                deploy_button = page.locator(deploy_button_selector)
                 print("Clicking Deploy button...")
                 deploy_button.click()
                 
