@@ -310,6 +310,14 @@ def run():
             # Fill the prompt
             print("Filling with prompt...")
             input_field.fill(prompt)
+            
+            # Take screenshot after filling prompt
+            take_screenshot(
+                page, 
+                os.path.join(results_dir, "02_prompt_filled.png"),
+                "Prompt filled and ready to submit",
+                results_dir
+            )
 
             # Find and click the submit button using the data-testid
             print("Finding and clicking submit button...")
@@ -319,14 +327,6 @@ def run():
             submit_button.click()
 
             print("Prompt submitted via button click")
-
-            # Take screenshot after filling prompt
-            take_screenshot(
-                page, 
-                os.path.join(results_dir, "02_prompt_filled.png"),
-                "Prompt filled and ready to submit",
-                results_dir
-            )
             
             # Take screenshot after submitting
             take_screenshot(
