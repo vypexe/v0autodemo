@@ -1,10 +1,11 @@
 #!/bin/bash
 # setup.sh - Dependency installation script for Render.com
 
-# Render.com already creates a virtual environment for us
-# We just need to install dependencies correctly
+# Create and activate a virtual environment
+python -m venv /opt/render/project/src/.venv
+source /opt/render/project/src/.venv/bin/activate
 
-# Install Python dependencies
+# Install Python dependencies 
 pip install -r requirements.txt
 
 # Upgrade OpenAI and run migration
@@ -13,7 +14,7 @@ python -m openai migrate
 
 # Install Playwright with proper browser and dependencies
 export PLAYWRIGHT_BROWSERS_PATH=/tmp/playwright-browsers
-pip install playwright==1.40.0  # Install specific version
+pip install playwright==1.30.0  # Install specific version
 playwright install chromium --with-deps
 
 echo "Setup completed successfully"

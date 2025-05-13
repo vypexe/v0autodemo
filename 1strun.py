@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright
+import time
 
 def run(playwright):
     browser = playwright.chromium.launch(headless=False)
@@ -13,7 +14,8 @@ def run(playwright):
 
     # At this point, a 6-digit code is sent to your email
     print("🔐 Enter the one-time code in the browser manually.")
-    page.pause()  # ⏸️ This pauses the browser so you can enter the code
+    print("Press Enter in this terminal when you've completed the login...")
+    input()  # Wait for user to press Enter in terminal instead of page.pause()
 
     # After login completes and v0.dev shows your dashboard
     context.storage_state(path="auth.json")  # ✅ Save the session
