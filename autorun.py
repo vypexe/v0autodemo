@@ -340,9 +340,47 @@ def run():
 
         # STEP 1: Wait for the initial Deploy button to appear
         print("Waiting for Deploy button to appear (this may take several minutes)...")
-        deploy_button_selector = "button:has-text('Deploy')"
-        page.wait_for_selector(deploy_button_selector, timeout=600000)  # 10 minute timeout
-        print("Deploy button found!")
+        
+        # Use JavaScript polling to find and detect the deploy button
+        deploy_found = False
+        start_time = time.time()
+        max_wait_time = 600  # 10 minutes
+        poll_interval = 10   # Check every 10 seconds
+        
+        while (time.time() - start_time) < max_wait_time:
+            print(f"Checking for Deploy button... ({int(time.time() - start_time)}s elapsed)")
+            
+            # Check if button exists using JavaScript
+            deploy_found = page.evaluate("""
+                () => {
+                    // Find buttons that contain both the SVG icon and "Deploy" text
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    for (const button of buttons) {
+                        if (button.textContent.includes('Deploy') && 
+                            button.querySelector('svg[data-testid="geist-icon"]') && 
+                            !button.textContent.includes('Production')) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            """)
+            
+            if deploy_found:
+                print("Deploy button found!")
+                break
+            
+            time.sleep(poll_interval)
+        
+        if not deploy_found:
+            print("Timed out waiting for Deploy button")
+            take_screenshot(
+                page,
+                os.path.join(results_dir, f"error_deploy_timeout_{time.strftime('%Y%m%d-%H%M%S')}.png"),
+                "ERROR: Timed out waiting for Deploy button to appear",
+                results_dir
+            )
+            return {"status": "error", "message": "Deploy button not found within timeout period"}
         
         # Take a screenshot before initial deployment
         timestamp = time.strftime('%Y%m%d-%H%M%S')
@@ -353,18 +391,31 @@ def run():
             results_dir
         )
         
-        # Click the Deploy button
-        deploy_button = page.locator(deploy_button_selector)
+        # Click the Deploy button using JavaScript
         print("Clicking Deploy button...")
-        deploy_button.click(force=True)
+        clicked = page.evaluate("""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                for (const button of buttons) {
+                    if (button.textContent.includes('Deploy') && 
+                        button.querySelector('svg[data-testid="geist-icon"]') && 
+                        !button.textContent.includes('Production')) {
+                        button.click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+        """)
         
-        # Take screenshot after clicking deploy
-        take_screenshot(
-            page,
-            os.path.join(results_dir, f"05_deploy_clicked_{timestamp}.png"),
-            "Deploy button clicked, waiting for website generation...",
-            results_dir
-        )
+        if not clicked:
+            print("Failed to click button using JavaScript, trying fallback method")
+            # Fallback to generic selector as last resort
+            try:
+                page.locator("button >> text=Deploy").click(force=True, timeout=5000)
+            except Exception as e:
+                print(f"Error with fallback button click: {e}")
+                return {"status": "error", "message": "Could not click Deploy button"}
         
         # STEP 2: Wait for website generation to complete and "Deploy to Production" button to appear
         print("Waiting for 'Deploy to Production' button to appear...")
