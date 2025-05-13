@@ -766,6 +766,30 @@ async def get_latest_image():
             media_type="application/json"
         )
 
+@app.get("/debug_auth")
+async def debug_auth():
+    """Debug the auth.json file"""
+    try:
+        with open("auth.json", "r") as f:
+            auth_data = json.load(f)
+            
+        # Redact sensitive values but keep structure
+        for cookie in auth_data.get("cookies", []):
+            if "value" in cookie:
+                cookie["value"] = f"[REDACTED - {len(cookie['value'])} chars]"
+                
+        return {
+            "auth_file_exists": True,
+            "auth_file_size": os.path.getsize("auth.json"),
+            "auth_data_structure": auth_data
+        }
+    except Exception as e:
+        return {
+            "auth_file_exists": os.path.exists("auth.json"),
+            "error": str(e)
+        }
+
+
 # Added a simple welcome endpoint for testing
 @app.get("/")
 async def welcome():
