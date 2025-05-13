@@ -269,276 +269,238 @@ def run():
         # Use headless mode from environment variable
         browser = p.chromium.launch(headless=HEADLESS)
         
-        try:
-            # Create a context with a specific viewport size
-            context = browser.new_context(
-                storage_state="auth.json",
-                viewport={"width": 1000, "height": 700}
-            )
-            
-            page = context.new_page()
+        # Create a context with a specific viewport size
+        context = browser.new_context(
+            storage_state="auth.json",
+            viewport={"width": 1000, "height": 700}
+        )
+        
+        page = context.new_page()
 
-            # Take initial screenshot
+        # Take initial screenshot
+        take_screenshot(
+            page, 
+            os.path.join(results_dir, "00_initial.png"),
+            "Starting automation process...",
+            results_dir
+        )
+        
+        # Go to v0.dev
+        print("Navigating to v0.dev...")
+        page.goto("https://v0.dev")
+        
+        # Take screenshot after navigation
+        take_screenshot(
+            page, 
+            os.path.join(results_dir, "01_v0dev_loaded.png"),
+            "v0.dev loaded successfully",
+            results_dir
+        )
+        
+        # Wait to make sure the page is interactive
+        page.wait_for_timeout(3000)
+        
+        # Look for input field
+        print("Looking for input field...")
+        input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
+        input_field.wait_for(state="visible")
+
+        # Fill the prompt
+        print("Filling with prompt...")
+        input_field.fill(prompt)
+        
+        # Take screenshot after filling prompt
+        take_screenshot(
+            page, 
+            os.path.join(results_dir, "02_prompt_filled.png"),
+            "Prompt filled and ready to submit",
+            results_dir
+        )
+
+        # Find and click the submit button using the data-testid
+        print("Finding and clicking submit button...")
+        submit_button = page.locator("button[data-testid='prompt-form-send-button']")
+        submit_button.wait_for(state="visible")
+        page.wait_for_timeout(1000)  # Small delay to ensure button is ready
+        submit_button.click(force=True)
+
+        print("Prompt submitted via button click")
+        
+        # Take screenshot after submitting
+        take_screenshot(
+            page, 
+            os.path.join(results_dir, "03_prompt_submitted.png"),
+            "Prompt submitted, waiting for generation to begin...",
+            results_dir
+        )
+
+        # STEP 1: Wait for the initial Deploy button to appear
+        print("Waiting for Deploy button to appear (this may take several minutes)...")
+        deploy_button_selector = "button:has-text('Deploy')"
+        page.wait_for_selector(deploy_button_selector, timeout=600000)  # 10 minute timeout
+        print("Deploy button found!")
+        
+        # Take a screenshot before initial deployment
+        timestamp = time.strftime('%Y%m%d-%H%M%S')
+        take_screenshot(
+            page,
+            os.path.join(results_dir, f"04_pre_deploy_{timestamp}.png"),
+            "Deploy button found! Ready to start deployment.",
+            results_dir
+        )
+        
+        # Click the Deploy button
+        deploy_button = page.locator(deploy_button_selector)
+        print("Clicking Deploy button...")
+        deploy_button.click(force=True)
+        
+        # Take screenshot after clicking deploy
+        take_screenshot(
+            page,
+            os.path.join(results_dir, f"05_deploy_clicked_{timestamp}.png"),
+            "Deploy button clicked, waiting for website generation...",
+            results_dir
+        )
+        
+        # STEP 2: Wait for website generation to complete and "Deploy to Production" button to appear
+        print("Waiting for 'Deploy to Production' button to appear...")
+        production_deploy_selector = "button:has-text('Deploy to Production')"
+        page.wait_for_selector(production_deploy_selector, timeout=600000)  # 10 minute timeout
+        print("'Deploy to Production' button found! Website generation completed.")
+        
+        # Take a screenshot before production deployment
+        take_screenshot(
+            page,
+            os.path.join(results_dir, f"06_pre_production_deploy_{timestamp}.png"),
+            "Website generated! Deploy to Production button found.",
+            results_dir
+        )
+        
+        # Wait for the Deploy to Production button to become enabled
+        print("Waiting for Deploy to Production button to become enabled...")
+        
+        # Poll until button is enabled, with timeout
+        max_wait_time = 600  # 10 minutes in seconds
+        poll_interval = 5    # Check every 5 seconds
+        start_time = time.time()
+        
+        button_enabled = False
+        while (time.time() - start_time) < max_wait_time:
+            # Check if button is enabled using JavaScript
+            is_enabled = page.evaluate("""
+                () => {
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const deployButton = buttons.find(button => 
+                        button.textContent && button.textContent.includes('Deploy to Production')
+                    );
+                    
+                    if (!deployButton) return false;
+                    return !deployButton.disabled && !deployButton.getAttribute('aria-disabled');
+                }
+            """)
+            
+            if is_enabled:
+                button_enabled = True
+                break
+                
+            print(f"Button still disabled, waiting... ({int(time.time() - start_time)} seconds elapsed)")
             take_screenshot(
-                page, 
-                os.path.join(results_dir, "00_initial.png"),
-                "Starting automation process...",
+                page,
+                os.path.join(results_dir, f"07_waiting_for_button_{int(time.time())}.png"),
+                f"Waiting for Deploy to Production button to become enabled... ({int((time.time() - start_time))} seconds elapsed)",
                 results_dir
             )
-
-            print("Navigating to v0.dev...")
-            # Use a shorter timeout and domcontentloaded to avoid hanging
-            page.goto("https://v0.dev", wait_until="domcontentloaded", timeout=60000)
-            print("Page loaded")
-
-            # Take screenshot after page load
+            time.sleep(poll_interval)
+        
+        if not button_enabled:
+            print("Timed out waiting for Deploy to Production button to become enabled")
             take_screenshot(
-                page, 
-                os.path.join(results_dir, "01_page_loaded.png"),
-                "v0.dev page loaded successfully",
+                page,
+                os.path.join(results_dir, f"error_button_timeout_{timestamp}.png"),
+                "ERROR: Timed out waiting for button to become enabled",
                 results_dir
             )
-
-            # Wait to make sure the page is interactive
-            page.wait_for_timeout(3000)
+            return {"status": "error", "message": "Timed out waiting for Deploy to Production button"}
+        
+        print("Deploy to Production button is now enabled!")
+        
+        # Take screenshot of enabled button
+        take_screenshot(
+            page,
+            os.path.join(results_dir, f"08_button_enabled_{timestamp}.png"),
+            "Deploy to Production button is now enabled and ready to click!",
+            results_dir
+        )
+        
+        # Click the Deploy to Production button
+        production_button = page.locator(production_deploy_selector)
+        print("Clicking Deploy to Production button...")
+        production_button.click(force=True)
+        
+        # Take screenshot after clicking production deploy
+        take_screenshot(
+            page,
+            os.path.join(results_dir, f"09_production_deploy_clicked_{timestamp}.png"),
+            "Deploy to Production button clicked, waiting for deployment to complete...",
+            results_dir
+        )
+        
+        # STEP 3: Wait for deployment to complete and "Visit Site" button to appear
+        print("Waiting for deployment to complete and 'Visit Site' button to appear...")
+        visit_site_selector = "a:has-text('Visit Site')"
+        page.wait_for_selector(visit_site_selector, timeout=600000)  # 10 minute timeout
+        print("Deployment complete! 'Visit Site' button found.")
+        
+        # Take screenshot of completed deployment
+        take_screenshot(
+            page,
+            os.path.join(results_dir, f"10_deployment_complete_{timestamp}.png"),
+            "Deployment completed successfully! Visit Site button is available.",
+            results_dir
+        )
+        
+        # Extract the deployed URL
+        deployed_url = ""
+        # The Visit Site button is inside an anchor tag with href
+        visit_site_link = page.locator(visit_site_selector).first
+        deployed_url = visit_site_link.get_attribute("href")
+        print(f"Extracted deployed URL: {deployed_url}")
+        
+        if deployed_url:
+            # Save the deployment results to a file for later reference
+            deployment_data = {
+                "url": deployed_url,
+                "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+                "status": "success"
+            }
             
-            # Look for input field
-            print("Looking for input field...")
-            input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
-            input_field.wait_for(state="visible")
-
-            # Fill the prompt
-            print("Filling with prompt...")
-            input_field.fill(prompt)
-
-            # Take screenshot after filling prompt
+            with open(os.path.join(results_dir, f"deployment_{timestamp}.json"), "w") as f:
+                json.dump(deployment_data, f, indent=2)
+            
+            # Also save to latest_deployment.txt for easy access
+            with open(os.path.join(results_dir, "latest_deployment.txt"), "w") as f:
+                f.write(f"url: {deployed_url}\ntimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Take final screenshot
             take_screenshot(
-                page, 
-                os.path.join(results_dir, "02_prompt_filled.png"),
-                "Prompt filled and ready to submit",
+                page,
+                os.path.join(results_dir, "11_final_success.png"),
+                f"Success! Site deployed to: {deployed_url}",
                 results_dir
             )
-
-            # Find and click the submit button using the data-testid
-            print("Finding and clicking submit button...")
-            submit_button = page.locator("button[data-testid='prompt-form-send-button']")
-            submit_button.wait_for(state="visible")
-            page.wait_for_timeout(1000)  # Small delay to ensure button is ready
-            submit_button.click()
-
-            print("Prompt submitted via button click")
             
-            # Take screenshot after submitting
-            take_screenshot(
-                page, 
-                os.path.join(results_dir, "03_prompt_submitted.png"),
-                "Prompt submitted, waiting for generation to begin...",
-                results_dir
-            )
-
-            try:
-                # STEP 1: Wait for the initial Deploy button to appear (may take a while for generation)
-                deploy_button_selector = "button:has(span:has(svg) + :text('Deploy'))"
-                page.wait_for_selector(deploy_button_selector, timeout=600000)  # 10 minute timeout
-                
-                # Take a screenshot before initial deployment
-                timestamp = time.strftime('%Y%m%d-%H%M%S')
-                take_screenshot(
-                    page,
-                    os.path.join(results_dir, f"04_pre_deploy_{timestamp}.png"),
-                    "Deploy button found! Ready to start deployment.",
-                    results_dir
-                )
-                
-                # Click the Deploy button
-                deploy_button = page.locator(deploy_button_selector)
-                print("Clicking Deploy button...")
-                deploy_button.click()
-                
-                # Take screenshot after clicking deploy
-                take_screenshot(
-                    page,
-                    os.path.join(results_dir, f"05_deploy_clicked_{timestamp}.png"),
-                    "Deploy button clicked, waiting for website generation...",
-                    results_dir
-                )
-                
-                # STEP 2: Wait for website generation to complete and "Deploy to Production" button to appear
-                print("Waiting for website generation to complete and 'Deploy to Production' button to appear...")
-                deploy_to_production_button = page.locator("button:has-text('Deploy to Production')")
-                deploy_to_production_button.wait_for(state="visible", timeout=600000)  # 10 minute timeout
-                print("Deploy to Production button found! Website generation completed.")
-                
-                # Take a screenshot before production deployment
-                take_screenshot(
-                    page,
-                    os.path.join(results_dir, f"06_pre_production_deploy_{timestamp}.png"),
-                    "Website generated! Deploy to Production button found.",
-                    results_dir
-                )
-                
-                # Wait for the Deploy to Production button to become enabled
-                print("Waiting for Deploy to Production button to become enabled...")
-                
-                # Function to check if button is enabled
-                def is_button_enabled():
-                    return page.evaluate("""
-                        () => {
-                            // Find all buttons
-                            const buttons = Array.from(document.querySelectorAll('button'));
-                            // Find the one with 'Deploy to Production' text content
-                            const deployButton = buttons.find(button => 
-                                button.textContent && button.textContent.includes('Deploy to Production')
-                            );
-                            
-                            if (!deployButton) return false;
-                            return !deployButton.disabled && !deployButton.getAttribute('aria-disabled');
-                        }
-                    """)
-                
-                # Poll until button is enabled, with timeout
-                max_wait_time = 600  # 10 minutes in seconds
-                poll_interval = 5  # Check every 5 seconds
-                start_time = time.time()
-                
-                button_enabled = False
-                while (time.time() - start_time) < max_wait_time:
-                    if is_button_enabled():
-                        button_enabled = True
-                        break
-                    print("Button still disabled, waiting...")
-                    take_screenshot(
-                        page,
-                        os.path.join(results_dir, f"07_waiting_for_button_{int(time.time())}.png"),
-                        f"Waiting for Deploy to Production button to become enabled... ({int((time.time() - start_time))} seconds elapsed)",
-                        results_dir
-                    )
-                    time.sleep(poll_interval)
-                
-                if not button_enabled:
-                    raise TimeoutError("Timed out waiting for Deploy to Production button to become enabled")
-                
-                print("Deploy to Production button is now enabled!")
-                
-                # Take screenshot of enabled button
-                take_screenshot(
-                    page,
-                    os.path.join(results_dir, f"08_button_enabled_{timestamp}.png"),
-                    "Deploy to Production button is now enabled and ready to click!",
-                    results_dir
-                )
-                
-                # Click the Deploy to Production button
-                print("Clicking Deploy to Production button...")
-                deploy_to_production_button.click()
-                
-                # Take screenshot after clicking production deploy
-                take_screenshot(
-                    page,
-                    os.path.join(results_dir, f"09_production_deploy_clicked_{timestamp}.png"),
-                    "Deploy to Production button clicked, waiting for deployment to complete...",
-                    results_dir
-                )
-                
-                # STEP 3: Wait for deployment to complete and "Visit Site" button to appear
-                print("Waiting for deployment to complete and Visit Site button to appear...")
-                visit_site_button = page.locator("span:has-text('Visit Site')")
-                visit_site_button.wait_for(state="visible", timeout=600000)  # 10 minute timeout
-                print("Visit Site button found! Deployment completed successfully.")
-                
-                # Take a screenshot after deployment
-                take_screenshot(
-                    page,
-                    os.path.join(results_dir, f"10_post_deploy_{timestamp}.png"),
-                    "Deployment completed! Visit Site button is now available.",
-                    results_dir
-                )
-                
-                # STEP 4: Get the deployed site URL
-                # Try to extract the URL from the link first
-                deployed_url = ""
-                try:
-                    # The Visit Site button might be inside an anchor tag with href
-                    url_container = page.locator("a:has(span:has-text('Visit Site'))")
-                    if url_container.count() > 0:
-                        # Try to get the href attribute
-                        deployed_url = url_container.first.get_attribute("href")
-                        print(f"Extracted deployed URL: {deployed_url}")
-                    else:
-                        # If we can't find it directly, we'll click and get the URL from the new tab
-                        print("Clicking Visit Site button...")
-                        with context.expect_page() as new_page_info:
-                            visit_site_button.click()
-                        new_page = new_page_info.value
-                        new_page.wait_for_load_state("domcontentloaded")
-                        deployed_url = new_page.url
-                        print(f"Extracted deployed URL from new tab: {deployed_url}")
-                        new_page.close()
-                except Exception as e:
-                    print(f"Error extracting URL: {e}")
-                    # Just click the button as fallback
-                    print("Falling back to clicking Visit Site button...")
-                    with context.expect_page() as new_page_info:
-                        visit_site_button.click()
-                    new_page = new_page_info.value
-                    new_page.wait_for_load_state("domcontentloaded")
-                    deployed_url = new_page.url
-                    print(f"Extracted deployed URL: {deployed_url}")
-                    new_page.close()
-                
-                # Save the URL to a file
-                if deployed_url:
-                    # Create a simple results structure
-                    result = {
-                        "timestamp": timestamp,
-                        "deployed_url": deployed_url,
-                        "prompt": prompt
-                    }
-                    
-                    # Save as JSON
-                    with open(os.path.join(results_dir, f"deployment_{timestamp}.json"), "w") as f:
-                        json.dump(result, f, indent=2)
-                    
-                    # Also save to a simple text file for easy access
-                    with open(os.path.join(results_dir, "latest_deployment.txt"), "w") as f:
-                        f.write(f"Timestamp: {timestamp}\n")
-                        f.write(f"URL: {deployed_url}\n")
-                        f.write(f"Prompt Summary: {prompt[:100]}...\n")
-                    
-                    # Update status for live viewer
-                    with open(os.path.join(results_dir, "status.txt"), "w") as f:
-                        f.write(f"DEPLOYMENT SUCCESSFUL!\nURL: {deployed_url}\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-                    
-                    print(f"Deployment results saved to {os.path.join(results_dir, f'deployment_{timestamp}.json')}")
-                    print(f"Latest deployment URL: {deployed_url}")
-                    
-                    # For automated systems, return a success code
-                    return {"status": "success", "url": deployed_url, "timestamp": timestamp}
-                else:
-                    print("Could not extract deployed URL")
-                    return {"status": "error", "message": "Deployment completed but URL not found"}
-                    
-            except Exception as e:
-                print(f"Error during deployment process: {e}")
-                # Take a screenshot of the error state
-                error_timestamp = time.strftime('%Y%m%d-%H%M%S')
-                take_screenshot(
-                    page,
-                    os.path.join(results_dir, f"error_{error_timestamp}.png"),
-                    f"ERROR: {str(e)}",
-                    results_dir
-                )
-                return {"status": "error", "message": str(e)}
+            # Update status for live viewer
+            with open(os.path.join(results_dir, "status.txt"), "w") as f:
+                f.write(f"DEPLOYMENT SUCCESSFUL!\nURL: {deployed_url}\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             
-        except Exception as e:
-            print(f"Critical error in automation: {e}")
-            return {"status": "error", "message": f"Critical error: {str(e)}"}
-        finally:
-            # Ensure browser is closed in all scenarios
-            try:
-                browser.close()
-            except:
-                pass
+            print(f"Deployment results saved to {os.path.join(results_dir, f'deployment_{timestamp}.json')}")
+            print(f"Latest deployment URL: {deployed_url}")
+            
+            # For automated systems, return a success code
+            return {"status": "success", "url": deployed_url, "timestamp": timestamp}
+        else:
+            print("Could not extract deployed URL")
+            return {"status": "error", "message": "Deployment completed but URL not found"}
 
 def clear_directory(directory):
     """Clear all files in the specified directory except .gitkeep"""
