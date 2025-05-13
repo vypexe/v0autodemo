@@ -303,10 +303,18 @@ def run():
             page.wait_for_timeout(3000)
             
             print("Looking for input field...")
-            input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
-            input_field.wait_for(state="visible")
-            print("Filling with prompt...")
-            input_field.type(prompt)
+            # Wait for hydration to complete
+            page.wait_for_selector("textarea[placeholder='Ask v0 to build…']")
+            print("Found textarea, waiting for extra hydration time...")
+            page.wait_for_timeout(2000)  # Longer delay to ensure full hydration
+            
+            # Focus input by clicking it (simulates real user interaction)
+            print("Clicking to focus the textarea...")
+            page.locator("textarea[placeholder='Ask v0 to build…']").click()
+            
+            # Type with keyboard with delay (forces React to register onChange events)
+            print("Typing prompt with keyboard...")
+            page.keyboard.type(prompt, delay=50)
             
             # Take screenshot after filling prompt
             take_screenshot(
@@ -319,49 +327,20 @@ def run():
             # Instead of pressing Enter, find and click the specific submit button
             print("Looking for submit button...")
 
-            # Try to find the button with the exact data-testid
+            # Wait briefly to ensure UI is updated
+            page.wait_for_timeout(1000)
+            
+            # Click the submit button (using the data-testid we know)
+            print("Clicking submit button...")
             submit_button = page.locator("button[data-testid='prompt-form-send-button']")
-
             if submit_button.count() > 0:
-                print("Found submit button by data-testid, clicking it...")
-                # Wait longer before clicking
-                page.wait_for_timeout(2000)
-                # Try force click which may help with some click issues
-                submit_button.click(force=True)
-                print("Button clicked with force option")
+                submit_button.click()
+                print("Button clicked")
             else:
-                # Fallback to other methods of finding the button
-                print("Submit button not found by data-testid, trying alternative methods...")
-                
-                # Try to find by SVG inside the button (the arrow icon)
-                svg_button = page.locator("button:has(svg[data-testid='geist-icon'])")
-                if svg_button.count() > 0:
-                    print("Found submit button by SVG icon, clicking it...")
-                    svg_button.click(force=True)
-                else:
-                    # Last resort - try to use JavaScript to find and click the button
-                    print("Trying to click submit button using JavaScript...")
-                    page.evaluate("""
-                        () => {
-                            const buttons = Array.from(document.querySelectorAll('button'));
-                            const submitButton = buttons.find(button => 
-                                button.innerHTML.includes('svg') && 
-                                (button.getAttribute('data-testid') === 'prompt-form-send-button' || 
-                                button.classList.contains('ml-1'))
-                            );
-                            if (submitButton) {
-                                submitButton.click();
-                                return true;
-                            }
-                            return false;
-                        }
-                    """)
-
-            # Add an extra fallback - press Enter on the input field
-            print("Also trying to press Enter in the input field as a fallback")
-            input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
-            if input_field.count() > 0:
-                input_field.press("Enter")
+                print("Button not found, trying to press Enter")
+                input_field = page.locator("textarea[placeholder='Ask v0 to build…']")
+                if input_field.count() > 0:
+                    input_field.press("Enter")
 
             print("Prompt submitted")
             
