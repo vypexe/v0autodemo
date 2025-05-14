@@ -245,23 +245,6 @@ def take_screenshot(page, path, message, results_dir):
 def run():
     ensure_playwright_browsers_installed()
     
-    # Always force headless mode on Heroku
-    if 'DYNO' in os.environ:
-        headless = True
-    else:
-        headless = None
-    
-    # Determine if we should run headless
-    if headless is None:
-        HEADLESS = os.environ.get("HEADLESS", "true").lower() == "true"
-    else:
-        HEADLESS = headless
-    
-    # Force headless mode on Heroku regardless of other settings
-    if 'DYNO' in os.environ:
-        HEADLESS = True
-        print("Detected Heroku environment, forcing headless mode")
-    
     # Get prompt from API or use override
     if PROMPT_OVERRIDE:
         print(f"Using prompt override from API call")
