@@ -339,6 +339,17 @@ def run():
             results_dir
         )
         
+        # EARLY EXIT - Stop after prompt submission
+        print("Automation completed successfully up to prompt submission.")
+        print("Stopping early as requested.")
+        
+        # Create a success response with limited info
+        with open(os.path.join(results_dir, "status.txt"), "w") as f:
+            f.write(f"AUTOMATION COMPLETED\nStatus: Prompt Submitted\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Return success status
+        return {"status": "success", "message": "Prompt submitted successfully", "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')}
+
         # STEP 1: Wait for the initial Deploy button to appear
         print("Waiting for Deploy button to appear (this may take several minutes)...")
         

@@ -14,7 +14,7 @@ python -m openai migrate
 
 # Install Playwright with proper browser and dependencies
 export PLAYWRIGHT_BROWSERS_PATH=/tmp/playwright-browsers
-pip install playwright==1.52.0  # Install specific version
+pip install playwright==1.30.0 # Install specific version
 playwright install chromium --with-deps
 
 export DEBUG=playwright:*
