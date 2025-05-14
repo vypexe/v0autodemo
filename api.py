@@ -137,5 +137,59 @@ async def get_all_interviews():
     
     return result
 
+@app.get("/deployment")
+async def get_latest_deployment():
+    """Get the URL of the latest deployed website"""
+    results_dir = os.environ.get("RESULTS_DIR", "results")
+    deployment_path = os.path.join(results_dir, "latest_deployment.txt")
+    
+    # Check if the deployment file exists
+    if not os.path.exists(deployment_path):
+        return {"status": "no_deployment", "message": "No deployment has been completed yet"}
+    
+    try:
+        # Read the deployment file
+        with open(deployment_path, "r") as f:
+            content = f.read().strip()
+        
+        # Parse the content
+        lines = content.split("\n")
+        deployment_data = {}
+        
+        for line in lines:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                deployment_data[key.strip()] = value.strip()
+        
+        # Return the deployment data
+        return {
+            "status": "success",
+            "deployment": deployment_data
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Error reading deployment file: {str(e)}"}
+
+@app.get("/status")
+async def get_automation_status():
+    """Get the current status of the automation process"""
+    results_dir = os.environ.get("RESULTS_DIR", "results")
+    status_path = os.path.join(results_dir, "status.txt")
+    
+    # Check if the status file exists
+    if not os.path.exists(status_path):
+        return {"status": "unknown", "message": "Status file not found"}
+    
+    try:
+        # Read the status file
+        with open(status_path, "r") as f:
+            content = f.read().strip()
+        
+        # Return the status content
+        return {
+            "status": "running" if "DEPLOYMENT SUCCESSFUL" not in content else "success",
+            "message": content
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Error reading status file: {str(e)}"}
 
 # Run with: uvicorn api:app --reload

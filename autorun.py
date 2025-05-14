@@ -554,10 +554,55 @@ def run():
         
         # Extract the deployed URL
         deployed_url = ""
-        # The Visit Site button is inside an anchor tag with href
-        visit_site_link = page.locator(visit_site_selector).first
-        deployed_url = visit_site_link.get_attribute("href")
-        print(f"Extracted deployed URL: {deployed_url}")
+        try:
+            # More robust URL extraction using JavaScript evaluation
+            deployed_url = page.evaluate("""
+                () => {
+                    const visitSiteLink = document.querySelector('a[href]:has-text("Visit Site")');
+                    if (visitSiteLink) {
+                        return visitSiteLink.href;
+                    }
+                    // Fallback - look for any anchor with Visit Site text
+                    const anchors = Array.from(document.querySelectorAll('a'));
+                    for (const anchor of anchors) {
+                        if (anchor.textContent.includes('Visit Site') && anchor.href) {
+                            return anchor.href;
+                        }
+                    }
+                    return "";
+                }
+            """)
+            print(f"Extracted deployed URL using JavaScript: {deployed_url}")
+            
+            # Double-check with direct attribute access if JS method fails
+            if not deployed_url:
+                visit_site_link = page.locator(visit_site_selector).first
+                if visit_site_link:
+                    deployed_url = visit_site_link.get_attribute("href")
+                    print(f"Extracted deployed URL using attribute: {deployed_url}")
+        except Exception as e:
+            print(f"Error extracting URL: {e}")
+            # Third fallback - try to get any URL from the page that might be relevant
+            try:
+                deployed_url = page.evaluate("""
+                    () => {
+                        // Find any URL that might contain vercel.app or similar deployment domains
+                        const elements = document.querySelectorAll('*');
+                        for (const el of elements) {
+                            if (el.textContent && 
+                                (el.textContent.includes('vercel.app') || 
+                                 el.textContent.includes('.app') || 
+                                 el.textContent.includes('https://'))) {
+                                const match = el.textContent.match(/https:\/\/[^\s"')]+/);
+                                if (match) return match[0];
+                            }
+                        }
+                        return "";
+                    }
+                """)
+                print(f"Extracted deployed URL using fallback text search: {deployed_url}")
+            except Exception as fallback_error:
+                print(f"Error with fallback URL extraction: {fallback_error}")
         
         if deployed_url:
             # Save the deployment results to a file for later reference
