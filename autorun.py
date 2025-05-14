@@ -338,6 +338,9 @@ def run():
             "Prompt submitted, waiting for generation to begin...",
             results_dir
         )
+        
+        page.wait_for_selector("css=div[data-testid='next-screen-unique-element']", timeout=60000)
+        page.screenshot(path=os.path.join(results_dir, "movedon.png"))
 
         # STEP 1: Wait for the initial Deploy button to appear
         print("Waiting for Deploy button to appear (this may take several minutes)...")
