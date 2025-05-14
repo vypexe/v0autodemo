@@ -1,5 +1,4 @@
 import os
-os.environ["DEBUG"] = "pw:browser*"
 import time
 import subprocess
 import json

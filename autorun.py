@@ -2,6 +2,7 @@ from playwright.sync_api import sync_playwright, TimeoutError
 import requests
 import time
 import os
+os.environ["DEBUG"] = "pw:browser*"
 import json
 import shutil
 import subprocess
