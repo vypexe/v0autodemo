@@ -9,6 +9,13 @@ import subprocess
 import sys
 import logging
 
+
+# Check for command-line overrides via environment variables
+HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
+PROMPT_OVERRIDE = os.environ.get("PROMPT_OVERRIDE", None)
+SKIP_SCREENSHOTS = os.environ.get("SKIP_SCREENSHOTS", "false").lower() == "true"
+RESULTS_DIR = os.environ.get("RESULTS_DIR", "results")
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -22,12 +29,6 @@ def log_message(message):
     print(message)  # Keep original print for backward compatibility
     logging.info(message)  # Add logging
     sys.stdout.flush()  # Force flush stdout
-
-# Check for command-line overrides via environment variables
-HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
-PROMPT_OVERRIDE = os.environ.get("PROMPT_OVERRIDE", None)
-SKIP_SCREENSHOTS = os.environ.get("SKIP_SCREENSHOTS", "false").lower() == "true"
-RESULTS_DIR = os.environ.get("RESULTS_DIR", "results")
 
 def ensure_playwright_browsers_installed():
     """Ensure that Playwright browsers are installed"""
