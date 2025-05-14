@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.responses import Response
 import re
+import requests  # Add this import for the Heroku API calls
 
 app = FastAPI(title="v0.dev Automation API")
 
