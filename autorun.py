@@ -339,7 +339,11 @@ def run():
             results_dir
         )
         
-        page.wait_for_selector("css=div[data-testid='next-screen-unique-element']", timeout=60000)
+        # Wait for the exact SPA button element indicating the next screen
+        page.wait_for_selector(
+            "css=body > div.max-h-screen-patched.min-h-screen-patched.bg-background.sm\\:bg-muted.flex.w-full.flex-col > div.flex.min-h-0.flex-1 > div.flex.flex-1 > main > div > div > div > div > div > header > div > div.text-label-14.relative > button",
+            timeout=60000
+        )
         page.screenshot(path=os.path.join(results_dir, "movedon.png"))
 
         # STEP 1: Wait for the initial Deploy button to appear
