@@ -7,28 +7,12 @@ import json
 import shutil
 import subprocess
 import sys
-import logging
-
 
 # Check for command-line overrides via environment variables
 HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
 PROMPT_OVERRIDE = os.environ.get("PROMPT_OVERRIDE", None)
 SKIP_SCREENSHOTS = os.environ.get("SKIP_SCREENSHOTS", "false").lower() == "true"
 RESULTS_DIR = os.environ.get("RESULTS_DIR", "results")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(RESULTS_DIR, "automation.log")),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-def log_message(message):
-    print(message)  # Keep original print for backward compatibility
-    logging.info(message)  # Add logging
-    sys.stdout.flush()  # Force flush stdout
 
 def ensure_playwright_browsers_installed():
     """Ensure that Playwright browsers are installed"""
@@ -355,56 +339,6 @@ def run():
             results_dir
         )
         
-        # Instead use a more robust approach to detect the page transition
-        print("Waiting for page transition after prompt submission...")
-        # Take regular screenshots to see what's happening
-        for i in range(10):
-            time.sleep(5)  # Check every 5 seconds
-            current_url = page.url
-            page_content = page.content()
-            page_title = page.title()
-            print(f"Current URL: {current_url}")
-            print(f"Page title: {page_title}")
-            
-            # Take screenshots to debug
-            take_screenshot(
-                page,
-                os.path.join(results_dir, f"debug_wait_{i}.png"),
-                f"Waiting for page transition (attempt {i+1}/10)",
-                results_dir
-            )
-            
-            # Try multiple different ways to detect if we've moved on
-            try:
-                # Look for deploy buttons in various ways
-                deploy_button_exists = page.evaluate("""
-                    () => {
-                        // Method 1: Look for text content
-                        const buttons = Array.from(document.querySelectorAll('button'));
-                        for (const button of buttons) {
-                            if (button.textContent && button.textContent.includes('Deploy')) {
-                                console.log('Found deploy button by text content');
-                                return true;
-                            }
-                        }
-                        
-                        // Method 2: Look for any SVG icons in buttons
-                        const buttonsWithIcons = Array.from(document.querySelectorAll('button svg'));
-                        if (buttonsWithIcons.length > 0) {
-                            console.log('Found buttons with icons');
-                            return true;
-                        }
-                        
-                        return false;
-                    }
-                """)
-                
-                if deploy_button_exists:
-                    log_message("Detected deploy button or icons - page has transitioned!")
-                    break
-            except Exception as e:
-                log_message(f"Error checking page: {e}")
-
         # STEP 1: Wait for the initial Deploy button to appear
         print("Waiting for Deploy button to appear (this may take several minutes)...")
         
