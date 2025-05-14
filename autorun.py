@@ -7,6 +7,21 @@ import json
 import shutil
 import subprocess
 import sys
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(RESULTS_DIR, "automation.log")),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+def log_message(message):
+    print(message)  # Keep original print for backward compatibility
+    logging.info(message)  # Add logging
+    sys.stdout.flush()  # Force flush stdout
 
 # Check for command-line overrides via environment variables
 HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
@@ -339,12 +354,55 @@ def run():
             results_dir
         )
         
-        # Wait for the exact SPA button element indicating the next screen
-        page.wait_for_selector(
-            "css=body > div.max-h-screen-patched.min-h-screen-patched.bg-background.sm\\:bg-muted.flex.w-full.flex-col > div.flex.min-h-0.flex-1 > div.flex.flex-1 > main > div > div > div > div > div > header > div > div.text-label-14.relative > button",
-            timeout=60000
-        )
-        page.screenshot(path=os.path.join(results_dir, "movedon.png"))
+        # Instead use a more robust approach to detect the page transition
+        print("Waiting for page transition after prompt submission...")
+        # Take regular screenshots to see what's happening
+        for i in range(10):
+            time.sleep(5)  # Check every 5 seconds
+            current_url = page.url
+            page_content = page.content()
+            page_title = page.title()
+            print(f"Current URL: {current_url}")
+            print(f"Page title: {page_title}")
+            
+            # Take screenshots to debug
+            take_screenshot(
+                page,
+                os.path.join(results_dir, f"debug_wait_{i}.png"),
+                f"Waiting for page transition (attempt {i+1}/10)",
+                results_dir
+            )
+            
+            # Try multiple different ways to detect if we've moved on
+            try:
+                # Look for deploy buttons in various ways
+                deploy_button_exists = page.evaluate("""
+                    () => {
+                        // Method 1: Look for text content
+                        const buttons = Array.from(document.querySelectorAll('button'));
+                        for (const button of buttons) {
+                            if (button.textContent && button.textContent.includes('Deploy')) {
+                                console.log('Found deploy button by text content');
+                                return true;
+                            }
+                        }
+                        
+                        // Method 2: Look for any SVG icons in buttons
+                        const buttonsWithIcons = Array.from(document.querySelectorAll('button svg'));
+                        if (buttonsWithIcons.length > 0) {
+                            console.log('Found buttons with icons');
+                            return true;
+                        }
+                        
+                        return false;
+                    }
+                """)
+                
+                if deploy_button_exists:
+                    log_message("Detected deploy button or icons - page has transitioned!")
+                    break
+            except Exception as e:
+                log_message(f"Error checking page: {e}")
 
         # STEP 1: Wait for the initial Deploy button to appear
         print("Waiting for Deploy button to appear (this may take several minutes)...")
