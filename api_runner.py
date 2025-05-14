@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.responses import Response
+import re
 
 app = FastAPI(title="v0.dev Automation API")
 
@@ -158,95 +159,93 @@ async def run_automation(request: AutomationRequest, background_tasks: Backgroun
     return run_automation_task(background_tasks, request)
 
 @app.post("/run_latest")
-async def run_latest(background_tasks: BackgroundTasks):
-    """Start an automation run using the latest data from Upstash"""
-    # Create an empty request - autorun.py will know to fetch from Upstash
-    request = AutomationRequest(headless=True)
+async def run_latest_automation(background_tasks: BackgroundTasks):
+    """Run the automation with latest data from Upstash"""
+    global latest_status
     
-    # Create a function to run in the background
-    def run_upstash_task():
-        global latest_status
-        try:
-            # Update status
-            latest_status = {
-                "status": "running", 
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "deployed_url": None,
-                "error": None
-            }
-            
-            # Set environment variables for the subprocess
-            env = os.environ.copy()
-            env["USE_UPSTASH_DATA"] = "true"  # Special flag to use Upstash
-            
-            # Add all environment variables from .env
-            if os.environ.get("OPENAI_API_KEY"):
-                env["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY")
-            if os.environ.get("REDIS_URL"):
-                env["REDIS_URL"] = os.environ.get("REDIS_URL")
-            if os.environ.get("REDIS_TOKEN"):
-                env["REDIS_TOKEN"] = os.environ.get("REDIS_TOKEN")
-            
-            if request.headless is not None:
-                env["HEADLESS"] = str(request.headless).lower()
-            
-            # Execute main_runner.py
-            process = subprocess.run(
-                ["python", "main_runner.py"], 
-                env=env,
-                capture_output=True,
-                text=True
-            )
-            
-            # Check if the process was successful
-            if process.returncode != 0:
-                latest_status["status"] = "failed"
-                latest_status["error"] = process.stderr
-                return
-            
-            # Try to parse the output to get the deployed URL
-            try:
-                # Look for the results file
-                results_dir = os.environ.get("RESULTS_DIR", "results")
-                latest_file = os.path.join(results_dir, "latest_deployment.txt")
-                
-                if os.path.exists(latest_file):
-                    with open(latest_file, "r") as f:
-                        lines = f.readlines()
-                        url = None
-                        timestamp = None
-                        
-                        for line in lines:
-                            if line.startswith("URL:"):
-                                url = line.split("URL:")[1].strip()
-                            if line.startswith("Timestamp:"):
-                                timestamp = line.split("Timestamp:")[1].strip()
-                        
-                        if url:
-                            latest_status["status"] = "success"
-                            latest_status["deployed_url"] = url
-                            if timestamp:
-                                latest_status["timestamp"] = timestamp
-                else:
-                    latest_status["status"] = "completed_with_errors"
-                    latest_status["error"] = f"[Errno 2] No such file or directory: '{latest_file}'"
-            except Exception as e:
-                latest_status["status"] = "completed_with_errors"
-                latest_status["error"] = str(e)
-            
-        except Exception as e:
-            latest_status["status"] = "failed"
-            latest_status["error"] = str(e)
+    # Check if an automation is already running
+    if latest_status.get("status") == "running":
+        return {"status": "already_running", "message": "Automation is already running"}
     
-    # Start the background task
-    background_tasks.add_task(run_upstash_task)
+    # Update status to running
+    latest_status = {"status": "running", "message": "Starting automation with latest data"}
+    
+    # Scale up the worker dyno to run the automation
+    scale_success = scale_dyno("worker", 1)
+    if not scale_success:
+        latest_status = {"status": "error", "message": "Failed to start worker dyno"}
+        return {"status": "error", "message": "Failed to start worker dyno"}
+
+    # Update status file
+    results_dir = os.environ.get("RESULTS_DIR", "results")
+    os.makedirs(results_dir, exist_ok=True)
+    with open(os.path.join(results_dir, "status.txt"), "w") as f:
+        f.write(f"Starting automation\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     
     return {"status": "started", "message": "Automation started using latest Upstash data"}
 
 @app.get("/status")
-async def get_status():
-    """Get the status of the latest automation run"""
-    return latest_status
+async def get_automation_status():
+    """Get the current status of the automation process"""
+    results_dir = os.environ.get("RESULTS_DIR", "results")
+    status_path = os.path.join(results_dir, "status.txt")
+    deployment_path = os.path.join(results_dir, "latest_deployment.txt")
+    
+    # If we have a deployment file with a vercel URL, force status to "complete"
+    if os.path.exists(deployment_path):
+        try:
+            with open(deployment_path, "r") as f:
+                content = f.read()
+                if "vercel.app" in content:
+                    # Extract the URL from the content
+                    url_match = re.search(r'url: (https://[^\s\n]+)', content)
+                    url = url_match.group(1) if url_match else "URL not found"
+                    
+                    # Automatically scale down the worker dyno if we have a successful deployment
+                    # Only do this if we haven't already recorded scaling down
+                    scale_status_path = os.path.join(results_dir, "scale_down_recorded.txt")
+                    if not os.path.exists(scale_status_path):
+                        # Record that we've scaled down to avoid doing it multiple times
+                        with open(scale_status_path, "w") as f:
+                            f.write(f"Scaled down worker at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                        
+                        # Scale down in background to avoid blocking the response
+                        scale_dyno("worker", 0)
+                    
+                    return {"status": "complete", "message": "Deployment completed successfully", "url": url}
+        except Exception as e:
+            print(f"Error checking deployment file: {e}")
+    
+    # Otherwise check the regular status file
+    if os.path.exists(status_path):
+        try:
+            with open(status_path, "r") as f:
+                content = f.read().strip()
+            
+            # Determine status based on content
+            if "DEPLOYMENT SUCCESSFUL" in content:
+                # If successful but no vercel URL yet found in latest_deployment.txt
+                # This is a safety check - in this case we should also scale down
+                scale_status_path = os.path.join(results_dir, "scale_down_recorded.txt")
+                if not os.path.exists(scale_status_path):
+                    with open(scale_status_path, "w") as f:
+                        f.write(f"Scaled down worker at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    scale_dyno("worker", 0)
+                return {"status": "complete", "message": content}
+            elif "ERROR" in content or "TIMEOUT" in content:
+                # Also scale down on error
+                scale_status_path = os.path.join(results_dir, "scale_down_recorded.txt")
+                if not os.path.exists(scale_status_path):
+                    with open(scale_status_path, "w") as f:
+                        f.write(f"Scaled down worker at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    scale_dyno("worker", 0)
+                return {"status": "error", "message": content}
+            else:
+                return {"status": "running", "message": content}
+        except Exception as e:
+            return {"status": "error", "message": f"Error reading status file: {str(e)}"}
+    else:
+        return {"status": "unknown", "message": "Status file not found"}
 
 @app.get("/latest")
 async def get_latest():
@@ -513,6 +512,35 @@ async def stop_automation():
     else:
         return {"message": f"No running automation to stop. Current status: {latest_status['status']}"}
 
+# Add Heroku API client
+def scale_dyno(dyno_type, quantity):
+    """Scale a specific dyno type to the desired quantity using Heroku API"""
+    api_key = os.environ.get("HEROKU_API_KEY")
+    app_name = os.environ.get("HEROKU_APP_NAME", "v0-automation")
+    
+    if not api_key:
+        print("HEROKU_API_KEY environment variable not set, cannot scale dynos")
+        return False
+    
+    url = f"https://api.heroku.com/apps/{app_name}/formation/{dyno_type}"
+    headers = {
+        "Accept": "application/vnd.heroku+json; version=3",
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {"quantity": quantity}
+    
+    try:
+        response = requests.patch(url, headers=headers, json=payload)
+        if response.status_code in (200, 201, 202):
+            print(f"Successfully scaled {dyno_type} to {quantity}")
+            return True
+        else:
+            print(f"Failed to scale {dyno_type}: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"Error scaling dyno: {e}")
+        return False
 
 @app.get("/debug")
 async def debug_info():
