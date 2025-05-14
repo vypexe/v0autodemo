@@ -541,8 +541,28 @@ def run():
         # STEP 3: Wait for deployment to complete and "Visit Site" button to appear
         print("Waiting for deployment to complete and 'Visit Site' button to appear...")
         visit_site_selector = "a:has-text('Visit Site')"
-        page.wait_for_selector(visit_site_selector, timeout=600000)  # 10 minute timeout
-        print("Deployment complete! 'Visit Site' button found.")
+        
+        try:
+            # Wait with timeout - this is critical to avoid waiting forever
+            page.wait_for_selector(visit_site_selector, timeout=600000)  # 10 minute timeout
+            print("Deployment complete! 'Visit Site' button found.")
+        except TimeoutError:
+            print("Timed out waiting for 'Visit Site' button")
+            # Take error screenshot
+            take_screenshot(
+                page,
+                os.path.join(results_dir, f"error_visit_site_timeout_{timestamp}.png"),
+                "ERROR: Timed out waiting for Visit Site button to appear",
+                results_dir
+            )
+            
+            # Update status for live viewer
+            with open(os.path.join(results_dir, "status.txt"), "w") as f:
+                f.write(f"DEPLOYMENT TIMEOUT!\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Return error and HALT
+            print("Halting automation due to timeout")
+            return {"status": "error", "message": "Timed out waiting for Visit Site button"}
         
         # Take screenshot of completed deployment
         take_screenshot(
@@ -555,56 +575,68 @@ def run():
         # Extract the deployed URL
         deployed_url = ""
         try:
-            # More robust URL extraction using JavaScript evaluation
+            # Look specifically for Vercel URLs using JavaScript evaluation
             deployed_url = page.evaluate("""
                 () => {
+                    // First look for the explicit Visit Site button with href
                     const visitSiteLink = document.querySelector('a[href]:has-text("Visit Site")');
-                    if (visitSiteLink) {
+                    if (visitSiteLink && visitSiteLink.href && visitSiteLink.href.includes('.vercel.app')) {
                         return visitSiteLink.href;
                     }
-                    // Fallback - look for any anchor with Visit Site text
+                    
+                    // Next try all anchors with 'Visit Site' text
                     const anchors = Array.from(document.querySelectorAll('a'));
                     for (const anchor of anchors) {
-                        if (anchor.textContent.includes('Visit Site') && anchor.href) {
+                        if (anchor.textContent.includes('Visit Site') && 
+                            anchor.href && anchor.href.includes('.vercel.app')) {
                             return anchor.href;
                         }
                     }
+                    
+                    // Last resort - scan all elements for Vercel URLs in text content
+                    const allElements = document.querySelectorAll('*');
+                    for (const el of allElements) {
+                        if (el.textContent) {
+                            const match = el.textContent.match(/https?:\/\/[^\s"')]+\.vercel\.app[^\s"')]*?/g);
+                            if (match) return match[0];
+                        }
+                    }
+                    
+                    // If all else fails, look for any vercel.app URLs in the page
+                    const pageContent = document.documentElement.innerHTML;
+                    const urlMatches = pageContent.match(/https?:\/\/[^\s"'<>]+\.vercel\.app[^\s"'<>]*?/g);
+                    if (urlMatches && urlMatches.length > 0) {
+                        return urlMatches[0];
+                    }
+                    
                     return "";
                 }
             """)
-            print(f"Extracted deployed URL using JavaScript: {deployed_url}")
+            print(f"Extracted Vercel URL using JavaScript: {deployed_url}")
             
-            # Double-check with direct attribute access if JS method fails
-            if not deployed_url:
+            # If we still don't have a Vercel URL, do a fallback check with direct DOM attribute access
+            if not deployed_url or not '.vercel.app' in deployed_url:
+                # Direct attribute approach as fallback
                 visit_site_link = page.locator(visit_site_selector).first
                 if visit_site_link:
-                    deployed_url = visit_site_link.get_attribute("href")
-                    print(f"Extracted deployed URL using attribute: {deployed_url}")
+                    url = visit_site_link.get_attribute("href")
+                    if url and '.vercel.app' in url:
+                        deployed_url = url
+                        print(f"Extracted Vercel URL using direct attribute: {deployed_url}")
         except Exception as e:
             print(f"Error extracting URL: {e}")
-            # Third fallback - try to get any URL from the page that might be relevant
+            # Final fallback - scan page source for Vercel URLs
             try:
-                deployed_url = page.evaluate("""
-                    () => {
-                        // Find any URL that might contain vercel.app or similar deployment domains
-                        const elements = document.querySelectorAll('*');
-                        for (const el of elements) {
-                            if (el.textContent && 
-                                (el.textContent.includes('vercel.app') || 
-                                 el.textContent.includes('.app') || 
-                                 el.textContent.includes('https://'))) {
-                                const match = el.textContent.match(/https:\/\/[^\s"')]+/);
-                                if (match) return match[0];
-                            }
-                        }
-                        return "";
-                    }
-                """)
-                print(f"Extracted deployed URL using fallback text search: {deployed_url}")
+                html_content = page.content()
+                import re
+                vercel_urls = re.findall(r'https?://[^\s"\'<>]+\.vercel\.app[^\s"\'<>]*', html_content)
+                if vercel_urls:
+                    deployed_url = vercel_urls[0]
+                    print(f"Extracted Vercel URL using regex: {deployed_url}")
             except Exception as fallback_error:
                 print(f"Error with fallback URL extraction: {fallback_error}")
         
-        if deployed_url:
+        if deployed_url and ".vercel.app" in deployed_url:
             # Save the deployment results to a file for later reference
             deployment_data = {
                 "url": deployed_url,
@@ -623,11 +655,11 @@ def run():
             take_screenshot(
                 page,
                 os.path.join(results_dir, "11_final_success.png"),
-                f"Success! Site deployed to: {deployed_url}",
+                f"SUCCESS! Site deployed to: {deployed_url}",
                 results_dir
             )
             
-            # Update status for live viewer
+            # Update status for live viewer - make it clear this is SUCCESSFUL
             with open(os.path.join(results_dir, "status.txt"), "w") as f:
                 f.write(f"DEPLOYMENT SUCCESSFUL!\nURL: {deployed_url}\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             
@@ -637,8 +669,20 @@ def run():
             # For automated systems, return a success code
             return {"status": "success", "url": deployed_url, "timestamp": timestamp}
         else:
-            print("Could not extract deployed URL")
-            return {"status": "error", "message": "Deployment completed but URL not found"}
+            print("No valid Vercel deployment URL found.")
+            # Save the failure status
+            with open(os.path.join(results_dir, "status.txt"), "w") as f:
+                f.write(f"DEPLOYMENT INCOMPLETE - NO VALID URL FOUND\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Take error screenshot
+            take_screenshot(
+                page,
+                os.path.join(results_dir, f"error_no_valid_url_{timestamp}.png"),
+                "ERROR: No valid Vercel deployment URL found",
+                results_dir
+            )
+            
+            return {"status": "error", "message": "No valid Vercel deployment URL found"}
 
 def clear_directory(directory):
     """Clear all files in the specified directory except .gitkeep"""
@@ -657,4 +701,29 @@ def clear_directory(directory):
             print(f"Error clearing {path}: {e}")
 
 if __name__ == "__main__":
-    run()
+    try:
+        result = run()
+        # Print final status and exit
+        print(f"Automation completed with status: {result['status']}")
+        # Ensure we explicitly exit with appropriate code
+        import sys
+        if result['status'] == 'success':
+            sys.exit(0)  # Success exit code
+        else:
+            sys.exit(1)  # Error exit code
+    except Exception as e:
+        print(f"Uncaught exception in main process: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Update status file with error
+        try:
+            results_dir = os.environ.get("RESULTS_DIR", "results")
+            with open(os.path.join(results_dir, "status.txt"), "w") as f:
+                f.write(f"AUTOMATION ERROR: {str(e)}\nTimestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        except:
+            pass
+            
+        # Ensure process exits even after uncaught exceptions
+        import sys
+        sys.exit(1)
