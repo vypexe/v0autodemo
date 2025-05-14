@@ -271,8 +271,24 @@ def run():
     
     # Start browser automation
     with sync_playwright() as p:
-        # Use headless mode from environment variable
-        browser = p.chromium.launch(headless=HEADLESS)
+        # Use headless mode from environment variable with memory optimization flags
+        browser = p.chromium.launch(
+            headless=HEADLESS,
+            args=[
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox',
+                '--no-sandbox',
+                '--single-process',
+                '--disable-extensions',
+                '--disable-accelerated-2d-canvas',
+                '--disable-3d-apis',
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--mute-audio',
+                '--js-flags=--expose-gc,--max-old-space-size=500'
+            ]
+        )
         
         # Create a context with a specific viewport size
         context = browser.new_context(
@@ -346,7 +362,7 @@ def run():
         deploy_found = False
         start_time = time.time()
         max_wait_time = 600  # 10 minutes
-        poll_interval = 10   # Check every 10 seconds
+        poll_interval = 30   # Check every 30 seconds
         
         while (time.time() - start_time) < max_wait_time:
             print(f"Checking for Deploy button... ({int(time.time() - start_time)}s elapsed)")
@@ -370,6 +386,20 @@ def run():
             if deploy_found:
                 print("Deploy button found!")
                 break
+            
+            # Take screenshot every 2 minutes only
+            if (time.time() - start_time) % 120 == 0:
+                take_screenshot(
+                    page,
+                    os.path.join(results_dir, f"deploy_wait_{int(time.time())}.png"),
+                    f"Waiting for Deploy button... ({int(time.time() - start_time)}s elapsed)",
+                    results_dir
+                )
+            
+            # Force garbage collection to free memory
+            if (time.time() - start_time) % 90 == 0:
+                import gc
+                gc.collect()
             
             time.sleep(poll_interval)
         
@@ -437,7 +467,7 @@ def run():
         
         # Poll until button is enabled, with timeout
         max_wait_time = 600  # 10 minutes in seconds
-        poll_interval = 5    # Check every 5 seconds
+        poll_interval = 30   # Check every 30 seconds
         start_time = time.time()
         
         button_enabled = False
@@ -459,13 +489,20 @@ def run():
                 button_enabled = True
                 break
                 
+            if (time.time() - start_time) % 120 == 0:  # Take screenshot only every 2 minutes
+                take_screenshot(
+                    page,
+                    os.path.join(results_dir, f"07_waiting_for_button_{int(time.time())}.png"),
+                    f"Waiting for Deploy to Production button to become enabled... ({int((time.time() - start_time))} seconds elapsed)",
+                    results_dir
+                )
+            
+            # Force garbage collection to free memory
+            if (time.time() - start_time) % 90 == 0:  # Run GC every 90 seconds
+                import gc
+                gc.collect()
+                
             print(f"Button still disabled, waiting... ({int(time.time() - start_time)} seconds elapsed)")
-            take_screenshot(
-                page,
-                os.path.join(results_dir, f"07_waiting_for_button_{int(time.time())}.png"),
-                f"Waiting for Deploy to Production button to become enabled... ({int((time.time() - start_time))} seconds elapsed)",
-                results_dir
-            )
             time.sleep(poll_interval)
         
         if not button_enabled:
