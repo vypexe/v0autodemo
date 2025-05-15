@@ -14,3 +14,7 @@ plan:
 
 curl -X POST https://00d6-68-239-60-198.ngrok-free.app/run -H "Content-Type: application/json" -d '{"prompt_override": "Create a modern landing page for a tech startup"}'
 
+
+curl -X POST  https://v0-automation-71f16b24da1b.herokuapp.com/run_latest -H "Content-Type: application/json" -d '{}
+
+
