@@ -1,5 +1,7 @@
 # v0autodemo
 
+Use v0 to build websites!
+
 # Run with: uvicorn api:app --reload to access API (FastAPI)
 
 to access api: interview/latest/openai 
@@ -16,5 +18,3 @@ curl -X POST https://00d6-68-239-60-198.ngrok-free.app/run -H "Content-Type: app
 
 
 curl -X POST  https://v0-automation-71f16b24da1b.herokuapp.com/run_latest -H "Content-Type: application/json" -d '{}
-
-
